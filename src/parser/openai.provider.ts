@@ -46,13 +46,17 @@ Contexto del usuario:
 
 Intenciones posibles:
 - "registro": Gasto o ingreso (ej: "85000 mercado gold", "me pagaron 3 millones")
-- "consulta": Preguntas sobre saldos, fechas de pago, tarjetas registradas, mejor tarjeta a usar hoy (ej: "qué tarjeta uso hoy para 500 mil", "muéstrame mis tarjetas", "cuáles tarjetas tengo", "cuánto debo en total", "cómo voy este mes")
+- "consulta": Preguntas del usuario:
+    * Si el usuario pregunta qué tarjetas tiene registradas, pide verlas o listarlas (ej: "me indicas qué tarjetas tengo registradas", "qué tarjetas tengo", "mis tarjetas", "ver tarjetas"), DEBES usar tipoConsulta: "tarjetas".
+    * Si pregunta qué tarjeta usar hoy para una compra (ej: "qué tarjeta uso hoy para 500 mil"), usa tipoConsulta: "mejor_tarjeta".
+    * Si pregunta cuánto debe en total o deudas pendientes, usa tipoConsulta: "deudas".
+    * Si pregunta cómo va este mes o balance general, usa tipoConsulta: "resumen".
 - "pago_tarjeta": Cuando el usuario dice que ya pagó su tarjeta (ej: "ya pagué la gold", "pagué nu")
 - "pago_obligacion": Cuando el usuario paga una deuda fija (ej: "pagué la cuota del kona", "pagué el arriendo")
 - "correccion": Corregir o cambiar cuotas de una compra (ej: "ya pasé la de amazon a 1 cuota", "cambiar a 1 cuota")
 - "eliminacion": Borrar la última transacción (ej: "borra el último", "elimina ese gasto")
 - "config_presupuesto": Establecer o modificar el tope mensual de gasto global (ej: "mi presupuesto este mes es 3 millones", "cambiar umbral a 4.5m")
-- "config_tarjeta": Agregar o configurar una tarjeta de crédito (ej: "registrar tarjeta diners davivienda cupo de 14.000.000 corte los 20 pago los 5")
+- "config_tarjeta": Cuando el usuario quiere agregar, registrar o configurar una tarjeta de crédito, ya sea iniciando el proceso o con datos completos (ej: "registremos una tarjeta", "agregar tarjeta", "registrar tarjeta diners davivienda cupo de 14.000.000 corte los 20 pago los 5")
 - "ayuda": Preguntas sobre qué puede hacer Lukas (ej: "ayuda", "qué puedes hacer")
 - "no_entendido": Todo lo demás
 
@@ -145,11 +149,12 @@ Estructura JSON requerida:
       return { intencion: 'eliminacion', tonoDetectado: 'casual' };
     }
 
-    // 3. Registrar o agregar tarjeta de crédito (tolera errores como "registar", "dinner", etc.)
+    // 3. Registrar o agregar tarjeta de crédito (tolera errores como "registar", "dinner", "registremos una tarjeta", etc.)
     const tienePalabraTarjeta = texto.includes('tarjeta') || texto.includes('tc');
     const tieneCorteOPago = texto.includes('corte') && (texto.includes('pago') || texto.includes('cupo'));
     const esComandoRegistroTarjeta =
-      /(?:regis?tr?ar?|agreg?ar?|crear|meter|guardar|inscribir|nueva)\s+(?:mi\s+)?tarjeta/i.test(texto) ||
+      /(?:regis?tr\w*|agreg\w*|crear|meter|guardar|inscrib\w*|nueva)\s+(?:una\s+|la\s+|mi\s+|mis\s+|otra\s+)?tarjeta/i.test(texto) ||
+      texto.includes('configurar tarjeta') ||
       (tienePalabraTarjeta && (texto.includes('cupo') || tieneCorteOPago));
 
     if (esComandoRegistroTarjeta) {

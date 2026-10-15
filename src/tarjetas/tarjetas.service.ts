@@ -69,6 +69,22 @@ export class TarjetasService {
     return rows.map(mapearTarjeta);
   }
 
+  async eliminarTarjetasIncompletas(usuarioId: string): Promise<number> {
+    const res = await this.db.execute(
+      `DELETE FROM tarjetas WHERE usuario_id = $1 AND (nombre = 'Mi Tarjeta' OR banco = 'Banco')`,
+      [usuarioId],
+    );
+    return res;
+  }
+
+  async eliminarPorNombre(usuarioId: string, nombre: string): Promise<boolean> {
+    const res = await this.db.execute(
+      'DELETE FROM tarjetas WHERE usuario_id = $1 AND LOWER(nombre) = LOWER($2)',
+      [usuarioId, nombre],
+    );
+    return res > 0;
+  }
+
   async buscarPorId(id: string): Promise<Tarjeta | null> {
     const esUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
     if (!esUuid) {

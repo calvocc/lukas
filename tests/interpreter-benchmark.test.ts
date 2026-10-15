@@ -155,6 +155,17 @@ describe('Set de Pruebas del Intérprete: Mensajes Reales en Español Colombiano
       expect(res.consulta?.tipoConsulta).toBe('tarjetas');
     });
 
+    it('"hola me indicas que tarjetas tengo registradas/" -> Consulta tipo tarjetas', async () => {
+      const res = await provider.interpretar('hola me indicas que tarjetas tengo registradas/', contexto);
+      expect(res.intencion).toBe('consulta');
+      expect(res.consulta?.tipoConsulta).toBe('tarjetas');
+    });
+
+    it('"registremos una tarjeta" -> Intención config_tarjeta', async () => {
+      const res = await provider.interpretar('registremos una tarjeta', contexto);
+      expect(res.intencion).toBe('config_tarjeta');
+    });
+
     it('"85.000 mercado en efectivo" -> Gasto comida $85.000 respetando puntos de miles', async () => {
       const res = await provider.interpretar('85.000 mercado en efectivo', contexto);
       expect(res.intencion).toBe('registro');

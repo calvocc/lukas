@@ -103,7 +103,8 @@ export function extraerDetallesTarjeta(texto: string): DetallesTarjetaExtraidos 
   // Si no se extrajo directamente después de "cupo", buscar el monto más significativo
   if (!cupo) {
     const montoGeneral = extraerMontoColombiano(lower);
-    if (montoGeneral && montoGeneral !== diaCorte && montoGeneral !== diaPago) {
+    // Un cupo de tarjeta de crédito en Colombia es de al menos $100.000 (1 a 31 son días de corte/pago)
+    if (montoGeneral && montoGeneral >= 10000 && montoGeneral !== diaCorte && montoGeneral !== diaPago) {
       cupo = montoGeneral;
     }
   }

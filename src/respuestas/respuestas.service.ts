@@ -229,8 +229,9 @@ ${transaccion.medioPago === 'tarjeta' ? 'El cupo de tu tarjeta ha sido restablec
     if (tarjetas.length === 0) {
       return `💳 Aún no tienes tarjetas de crédito registradas.
 
-Puedes registrar una fácilmente escribiendo, por ejemplo:
-_"Registrar tarjeta Diners Davivienda cupo de 14.000.000 corte los 20 pago los 5"_`;
+Puedes registrar una fácilmente escribiendo:
+_"Registrar tarjeta Diners Davivienda cupo de 14.000.000 corte los 20 pago los 5"_
+o simplemente diciendo: _"registremos una tarjeta"_ y te pediré los datos paso a paso.`;
     }
 
     let texto = `💳 *Tus Tarjetas de Crédito Registradas:*\n\n`;

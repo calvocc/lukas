@@ -16,7 +16,17 @@ import { ObligacionesService } from '../obligaciones/obligaciones.service';
 import { DatabaseService } from '../database/database.service';
 import { ContextoMensaje } from '../parser/parser.interface';
 import { formatearMoneda } from '../respuestas/formateador';
-import { extraerDetallesTarjeta } from '../parser/parser.utils';
+import { extraerDetallesTarjeta, extraerMontoColombiano } from '../parser/parser.utils';
+
+export interface RegistroTarjetaPendiente {
+  nombre: string | null;
+  banco: string | null;
+  cupo: number | null;
+  diaCorte: number | null;
+  diaPago: number | null;
+  pasoEsperado?: 'nombre' | 'cupo' | 'corte' | 'pago';
+  actualizadoEn: number;
+}
 
 @Injectable()
 export class CanalRouterService {
@@ -24,6 +34,8 @@ export class CanalRouterService {
   // Rate limiting en memoria (mensajes por minuto por usuario)
   private readonly historialMensajes = new Map<string, number[]>();
   private readonly MAX_MENSAJES_POR_MINUTO = 15;
+  // Flujo conversacional guiado para registro de tarjetas paso a paso
+  private readonly sesionesRegistroTarjetas = new Map<string, RegistroTarjetaPendiente>();
 
   constructor(
     private readonly usuariosService: UsuariosService,
@@ -92,6 +104,18 @@ export class CanalRouterService {
 
     if (usuario.estado === 'bloqueado' || usuario.estado === 'eliminado') {
       return 'Esta cuenta no está activa en Lukas. Contacta a soporte para más información.';
+    }
+
+    // 2.5. Si el usuario está en medio de un flujo guiado para registrar tarjeta
+    const sesionRegistro = this.sesionesRegistroTarjetas.get(usuario.id);
+    if (sesionRegistro) {
+      const lower = texto.toLowerCase().trim();
+      if (lower === 'cancelar' || lower.includes('cancelar registro') || lower === 'ya no' || lower === 'salir') {
+        this.sesionesRegistroTarjetas.delete(usuario.id);
+        return '❌ Cancelé el registro de la tarjeta. Puedes registrarla en cualquier momento diciendo: _"registremos una tarjeta"_.';
+      }
+
+      return await this.continuarRegistroTarjeta(usuario.id, texto, sesionRegistro);
     }
 
     // 3. Usuario activo: Preparar contexto para el Intérprete
@@ -192,24 +216,25 @@ export class CanalRouterService {
 
       case 'config_tarjeta': {
         const detalles = parsed.configTarjeta ?? extraerDetallesTarjeta(texto);
-        const diaCorte = detalles.diaCorte ?? 15;
-        const diaPago = detalles.diaPago ?? 5;
-        const cupo = detalles.cupo ?? 3000000;
-        const nombre = detalles.nombre && detalles.nombre !== 'Mi Tarjeta' ? detalles.nombre : 'Tarjeta Crédito';
-        const banco = detalles.banco && detalles.banco !== 'Banco' ? detalles.banco : 'Banco';
+        const tieneNombre = Boolean(detalles.nombre && detalles.nombre !== 'Mi Tarjeta' && detalles.nombre !== 'Tarjeta Crédito');
+        const tieneCupo = Boolean(detalles.cupo && detalles.cupo > 0);
+        const tieneCorte = Boolean(detalles.diaCorte && detalles.diaCorte >= 1 && detalles.diaCorte <= 31);
+        const tienePago = Boolean(detalles.diaPago && detalles.diaPago >= 1 && detalles.diaPago <= 31);
 
-        const nueva = await this.tarjetasService.crear(usuario.id, {
-          nombre,
-          banco,
-          diaCorte,
-          diaPago,
-          cupo,
-          cupoDisponible: cupo,
-          aceptaCompras: true,
-          cobraInteresUnaCuota: false,
-        });
+        // Si la información está 100% COMPLETA en el mensaje, se registra directamente
+        if (tieneNombre && tieneCupo && tieneCorte && tienePago && detalles.nombre && detalles.cupo && detalles.diaCorte && detalles.diaPago) {
+          const nueva = await this.tarjetasService.crear(usuario.id, {
+            nombre: detalles.nombre,
+            banco: detalles.banco && detalles.banco !== 'Banco' ? detalles.banco : detalles.nombre,
+            diaCorte: detalles.diaCorte,
+            diaPago: detalles.diaPago,
+            cupo: detalles.cupo,
+            cupoDisponible: detalles.cupo,
+            aceptaCompras: true,
+            cobraInteresUnaCuota: false,
+          });
 
-        return `💳 *¡Tarjeta guardada con éxito!*
+          return `💳 *¡Tarjeta guardada con éxito!*
 
 • Tarjeta: *${nueva.nombre}* (${nueva.banco})
 • Cupo disponible: *${formatearMoneda(nueva.cupo ?? 0)}*
@@ -218,13 +243,50 @@ export class CanalRouterService {
 
 💡 A partir de ahora, cuando vayas a comprar algo, pregúntame:
 _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para ganar hasta 50 días libres de interés.`;
+        }
+
+        // Si la información está incompleta, iniciar flujo conversacional guiado paso a paso
+        const sesion: RegistroTarjetaPendiente = {
+          nombre: tieneNombre ? detalles.nombre : null,
+          banco: tieneNombre ? detalles.banco : null,
+          cupo: tieneCupo ? detalles.cupo : null,
+          diaCorte: tieneCorte ? detalles.diaCorte : null,
+          diaPago: tienePago ? detalles.diaPago : null,
+          actualizadoEn: Date.now(),
+        };
+        this.sesionesRegistroTarjetas.set(usuario.id, sesion);
+        return this.pedirSiguienteDatoTarjeta(sesion);
       }
 
       case 'consulta': {
-        const tipoConsulta = parsed.consulta?.tipoConsulta ?? 'resumen';
+        let tipoConsulta = parsed.consulta?.tipoConsulta ?? 'resumen';
+        const lowerLimpio = texto.toLowerCase().replace(/[/\\?¿!¡.,;:]/g, ' ');
+
+        // Purgar tarjetas dummy incompletas si existieran de pruebas anteriores
+        await this.tarjetasService.eliminarTarjetasIncompletas(usuario.id);
+        const tarjetasActualizadas = await this.tarjetasService.listarPorUsuario(usuario.id);
+
+        // Protección contra alucinaciones de la IA si el usuario preguntó por sus tarjetas registradas
+        if (
+          lowerLimpio.includes('tarjetas tengo') ||
+          lowerLimpio.includes('tarjetas registradas') ||
+          lowerLimpio.includes('mis tarjetas') ||
+          lowerLimpio.includes('que tarjetas') ||
+          lowerLimpio.includes('qué tarjetas') ||
+          lowerLimpio.includes('cuáles tarjetas') ||
+          lowerLimpio.includes('cuales tarjetas') ||
+          lowerLimpio.includes('ver tarjetas') ||
+          lowerLimpio.includes('mostrar tarjetas') ||
+          lowerLimpio.includes('listar tarjetas')
+        ) {
+          // A menos que sea recomendación para compra ("qué tarjeta uso hoy...")
+          if (!lowerLimpio.includes('uso hoy') && !lowerLimpio.includes('usar hoy') && !lowerLimpio.includes('mejor tarjeta')) {
+            tipoConsulta = 'tarjetas';
+          }
+        }
 
         if (tipoConsulta === 'tarjetas') {
-          return this.respuestasService.mensajeListadoTarjetas(tarjetas);
+          return this.respuestasService.mensajeListadoTarjetas(tarjetasActualizadas);
         }
 
         if (tipoConsulta === 'mejor_tarjeta') {
@@ -234,7 +296,7 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
         }
 
         if (tipoConsulta === 'deudas') {
-          return this.respuestasService.mensajeResumenDeudas(tarjetas, obligaciones);
+          return this.respuestasService.mensajeResumenDeudas(tarjetasActualizadas, obligaciones);
         }
 
         // Resumen / Balance
@@ -245,7 +307,7 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
           const pct = Math.round((gastoMes / limitePresupuesto) * 100);
           respuesta += `\n• Presupuesto mensual: *${formatearMoneda(limitePresupuesto)}* (${pct}% consumido)`;
         }
-        respuesta += `\n• Tarjetas activas: ${tarjetas.length}\n• Obligaciones activas: ${obligaciones.length}`;
+        respuesta += `\n• Tarjetas activas: ${tarjetasActualizadas.length}\n• Obligaciones activas: ${obligaciones.length}`;
         return respuesta;
       }
 
@@ -313,5 +375,132 @@ Prueba diciendo algo como:
 • _"Ya pagué la gold"_
 • _"Ayuda"_ para ver todo lo que puedo hacer.`;
     }
+  }
+
+  private pedirSiguienteDatoTarjeta(sesion: RegistroTarjetaPendiente): string {
+    if (!sesion.nombre) {
+      sesion.pasoEsperado = 'nombre';
+      return `💳 ¡De una! Vamos a registrar tu tarjeta de crédito para aplicar *El Método Lukas* y ganarte hasta 50 días de financiamiento libre de intereses 🚀
+
+1️⃣ ¿Cuál es el *banco y franquicia o categoría* de tu tarjeta?
+(Ej: _Bancolombia Gold_, _Nu_, _Diners Davivienda_, _Falabella CMR_)`;
+    }
+
+    if (!sesion.cupo || sesion.cupo <= 0) {
+      sesion.pasoEsperado = 'cupo';
+      return `Genial, *${sesion.nombre}* 🏦
+
+2️⃣ ¿Cuál es tu *cupo total asignado*?
+(Ej: _$14.000.000_ o _5 millones_)`;
+    }
+
+    if (!sesion.diaCorte || sesion.diaCorte < 1 || sesion.diaCorte > 31) {
+      sesion.pasoEsperado = 'corte';
+      return `Anotado: cupo de *${formatearMoneda(sesion.cupo)}* 💰
+
+3️⃣ ¿Qué *día del mes es tu fecha de corte*?
+(Escribe solo el número del día, ej: _20_)`;
+    }
+
+    if (!sesion.diaPago || sesion.diaPago < 1 || sesion.diaPago > 31) {
+      sesion.pasoEsperado = 'pago';
+      return `Corte el día *${sesion.diaCorte}* ✂️
+
+4️⃣ Por último, ¿qué *día del mes es tu fecha límite de pago*?
+(Escribe solo el número del día, ej: _5_)`;
+    }
+
+    return '';
+  }
+
+  private async continuarRegistroTarjeta(
+    usuarioId: string,
+    texto: string,
+    sesion: RegistroTarjetaPendiente,
+  ): Promise<string> {
+    const detalles = extraerDetallesTarjeta(texto);
+
+    // 1. Nombre y Banco
+    if (detalles.nombre && detalles.nombre !== 'Mi Tarjeta' && detalles.nombre !== 'Tarjeta Crédito') {
+      sesion.nombre = detalles.nombre;
+      sesion.banco = detalles.banco;
+    } else if (!sesion.nombre && sesion.pasoEsperado === 'nombre') {
+      const nombreLimpio = texto.trim().replace(/^(es|mi tarjeta es|la|es una|tarjeta)\s+/i, '');
+      if (nombreLimpio.length >= 2 && !/^\d+$/.test(nombreLimpio)) {
+        sesion.nombre = detalles.nombre !== 'Mi Tarjeta' ? detalles.nombre : nombreLimpio;
+        sesion.banco = detalles.banco !== 'Banco' ? detalles.banco : 'Banco';
+      }
+    }
+
+    // 2. Cupo
+    const lower = texto.toLowerCase().trim();
+    if (detalles.cupo && detalles.cupo >= 10000 && (lower.includes('cupo') || sesion.pasoEsperado === 'cupo')) {
+      sesion.cupo = detalles.cupo;
+    } else if ((!sesion.cupo || sesion.cupo <= 0) && sesion.pasoEsperado === 'cupo') {
+      const monto = extraerMontoColombiano(texto);
+      if (monto && monto > 0) {
+        sesion.cupo = monto;
+      }
+    }
+
+    // 3. Día de Corte
+    if (detalles.diaCorte && detalles.diaCorte >= 1 && detalles.diaCorte <= 31) {
+      sesion.diaCorte = detalles.diaCorte;
+    } else if ((!sesion.diaCorte || sesion.diaCorte < 1) && sesion.pasoEsperado === 'corte') {
+      const numMatch = texto.match(/\b([1-9]|[12]\d|3[01])\b/);
+      if (numMatch && numMatch[1]) {
+        sesion.diaCorte = Number(numMatch[1]);
+      }
+    }
+
+    // 4. Día de Pago
+    if (detalles.diaPago && detalles.diaPago >= 1 && detalles.diaPago <= 31) {
+      sesion.diaPago = detalles.diaPago;
+    } else if ((!sesion.diaPago || sesion.diaPago < 1) && sesion.pasoEsperado === 'pago') {
+      const numMatch = texto.match(/\b([1-9]|[12]\d|3[01])\b/);
+      if (numMatch && numMatch[1]) {
+        sesion.diaPago = Number(numMatch[1]);
+      }
+    }
+
+    sesion.actualizadoEn = Date.now();
+
+    // Validar si ya se completaron los 4 datos requeridos
+    if (
+      sesion.nombre &&
+      sesion.cupo &&
+      sesion.cupo > 0 &&
+      sesion.diaCorte &&
+      sesion.diaCorte >= 1 &&
+      sesion.diaCorte <= 31 &&
+      sesion.diaPago &&
+      sesion.diaPago >= 1 &&
+      sesion.diaPago <= 31
+    ) {
+      const nueva = await this.tarjetasService.crear(usuarioId, {
+        nombre: sesion.nombre,
+        banco: sesion.banco && sesion.banco !== 'Banco' ? sesion.banco : sesion.nombre,
+        diaCorte: sesion.diaCorte,
+        diaPago: sesion.diaPago,
+        cupo: sesion.cupo,
+        cupoDisponible: sesion.cupo,
+        aceptaCompras: true,
+        cobraInteresUnaCuota: false,
+      });
+
+      this.sesionesRegistroTarjetas.delete(usuarioId);
+
+      return `💳 *¡Tarjeta guardada con éxito!*
+
+• Tarjeta: *${nueva.nombre}* (${nueva.banco})
+• Cupo disponible: *${formatearMoneda(nueva.cupo ?? 0)}*
+• Día de corte: *${nueva.diaCorte}*
+• Día de pago: *${nueva.diaPago}*
+
+💡 A partir de ahora, cuando vayas a comprar algo, pregúntame:
+_"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para ganar hasta 50 días libres de interés.`;
+    }
+
+    return this.pedirSiguienteDatoTarjeta(sesion);
   }
 }
