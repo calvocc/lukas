@@ -5,13 +5,14 @@
  * ========================================================
  */
 
-import { ParserResult, Tarjeta, Obligacion, Transaccion } from '../domain/types';
+import { ParserResult, Tarjeta, Obligacion, Transaccion, RecomendacionCompraPendiente } from '../domain/types';
 
 export interface ContextoMensaje {
   readonly fechaActual: string; // YYYY-MM-DD
   readonly tarjetasActivas: readonly { readonly id: string; readonly nombre: string; readonly banco: string }[];
   readonly obligacionesActivas: readonly { readonly id: string; readonly nombre: string }[];
   readonly ultimaTransaccion: Transaccion | null;
+  readonly recomendacionPrevia?: RecomendacionCompraPendiente | null;
 }
 
 export interface ProveedorIA {

@@ -15,7 +15,7 @@ import { TarjetasService } from '../tarjetas/tarjetas.service';
 import { ObligacionesService } from '../obligaciones/obligaciones.service';
 import { DatabaseService } from '../database/database.service';
 import { ContextoMensaje } from '../parser/parser.interface';
-import { Tarjeta } from '../domain/types';
+import { Tarjeta, RecomendacionCompraPendiente } from '../domain/types';
 import { formatearMoneda } from '../respuestas/formateador';
 import { extraerDetallesTarjeta, extraerMontoColombiano } from '../parser/parser.utils';
 
@@ -39,6 +39,8 @@ export class CanalRouterService {
   private readonly MAX_MENSAJES_POR_MINUTO = 15;
   // Flujo conversacional guiado para registro de tarjetas paso a paso
   private readonly sesionesRegistroTarjetas = new Map<string, RegistroTarjetaPendiente>();
+  // Recomendaciones de compra pendientes para seguimiento contextual ("lo compré")
+  private readonly recomendacionesPendientes = new Map<string, RecomendacionCompraPendiente>();
 
   constructor(
     private readonly usuariosService: UsuariosService,
@@ -126,11 +128,22 @@ export class CanalRouterService {
     const obligaciones = await this.obligacionesService.listarPorUsuario(usuario.id);
     const ultimaTransaccion = await this.movimientosService.obtenerUltimaTransaccion(usuario.id);
 
+    // Obtener recomendación previa de compra si existe y no ha expirado (30 min)
+    const recPendiente = this.recomendacionesPendientes.get(usuario.id);
+    const recomendacionPrevia =
+      recPendiente && Date.now() - recPendiente.timestamp < 30 * 60 * 1000
+        ? recPendiente
+        : null;
+    if (recPendiente && !recomendacionPrevia) {
+      this.recomendacionesPendientes.delete(usuario.id);
+    }
+
     const contexto: ContextoMensaje = {
       fechaActual: new Date().toISOString().split('T')[0] ?? '',
       tarjetasActivas: tarjetas.map((t) => ({ id: t.id, nombre: t.nombre, banco: t.banco })),
       obligacionesActivas: obligaciones.map((o) => ({ id: o.id, nombre: o.nombre })),
       ultimaTransaccion,
+      recomendacionPrevia,
     };
 
     // 4. Intérprete: Extraer intención y datos
@@ -372,7 +385,25 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
 
           case 'mejor_tarjeta': {
             const monto = parsed.consulta?.montoSimulado ?? 100000;
+            const cuotas = parsed.consulta?.cuotasSimuladas ?? 1;
+            const descripcion = parsed.consulta?.descripcionSimulada ?? 'Compra simulada';
+            const categoria = parsed.consulta?.categoriaConsulta ?? 'Otros';
             const recomendaciones = await this.tarjetasService.recomendarMejorTarjeta(usuario.id, monto);
+
+            // Guardar recomendación para permitir confirmación contextual ("lo compré")
+            if (recomendaciones.length > 0 && recomendaciones[0]) {
+              const mejor = recomendaciones[0];
+              this.recomendacionesPendientes.set(usuario.id, {
+                monto,
+                descripcion,
+                categoria,
+                cuotas,
+                tarjetaRecomendadaId: mejor.tarjeta.id,
+                tarjetaRecomendadaNombre: mejor.tarjeta.nombre,
+                timestamp: Date.now(),
+              });
+            }
+
             return this.respuestasService.mensajeRecomendacionTarjeta(monto, recomendaciones);
           }
 
@@ -463,17 +494,35 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
           );
         }
 
+        // Limpiar recomendación pendiente una vez registrada la compra
+        this.recomendacionesPendientes.delete(usuario.id);
+
         return respuestasVarias.join('\n\n---\n\n');
       }
 
       case 'no_entendido':
-      default:
+      default: {
+        const lower = texto.toLowerCase().trim();
+        if (
+          lower.includes('compr') ||
+          lower === 'lo compre' ||
+          lower === 'lo compré' ||
+          lower === 'la compre' ||
+          lower === 'la compré' ||
+          lower === 'listo' ||
+          lower === 'hecho'
+        ) {
+          return `🤔 Parece que quieres registrar una compra, pero no tengo los detalles o expiró la recomendación previa.
+Escríbeme por ejemplo: _"1.200.000 tv diners 2 cuotas"_ o _"85000 mercado efectivo"_.`;
+        }
+
         return `🤔 No logré entender bien ese mensaje.
 Prueba diciendo algo como:
 • _"85000 mercado gold"_
 • _"¿Qué tarjeta uso hoy para 500 mil?"_
 • _"Ya pagué la gold"_
 • _"Ayuda"_ para ver todo lo que puedo hacer.`;
+      }
     }
   }
 

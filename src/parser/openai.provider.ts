@@ -43,14 +43,23 @@ Contexto del usuario:
 - Tarjetas activas: ${JSON.stringify(contexto.tarjetasActivas)}
 - Obligaciones/Deudas activas: ${JSON.stringify(contexto.obligacionesActivas)}
 - Última transacción: ${contexto.ultimaTransaccion ? JSON.stringify(contexto.ultimaTransaccion) : 'Ninguna'}
+- Recomendación previa de compra reciente: ${contexto.recomendacionPrevia ? JSON.stringify(contexto.recomendacionPrevia) : 'Ninguna'}
 
 Intenciones posibles:
-- "registro": Gasto o ingreso (ej: "85000 mercado gold", "me pagaron 3 millones")
+- "registro": Gasto o ingreso (ej: "85000 mercado gold", "me pagaron 3 millones").
+    * IMPORTANTE - CONFIRMACIÓN DE COMPRA PREVIA: Si el usuario dice "lo compré", "lo compre", "la compré", "ya lo compré", "ya la compré", "comprado", "listo", "ya lo pagué con esa", "lo compré con la master", o similar, Y en el contexto existe una "Recomendación previa de compra reciente":
+      DEBES clasificarlo con intención "registro" de un gasto:
+      * monto: el monto de la recomendación previa
+      * cuotas: las cuotas de la recomendación previa (ej: 2)
+      * descripcion: la descripción de la recomendación previa (ej: "tv" o "TV")
+      * tipo: "gasto"
+      * medioPago: "tarjeta"
+      * tarjeta: si el usuario especifica otra tarjeta en su mensaje (ej: "lo compré con la master"), usa esa tarjeta; si no menciona tarjeta, usa la tarjetaRecomendadaNombre de la recomendación previa.
 - "consulta": Preguntas o consultas del usuario. DEBES determinar la intención y el campo "consulta.tipoConsulta" exacto:
     * "tarjetas": cuando el usuario pide ver, listar o consultar cuáles tarjetas tiene registradas (ej: "muéstrame mis tarjetas", "qué tarjetas tengo", "ver tarjetas", "tarjetas registradas", "cuáles tarjetas tengo", "hola me indicas qué tarjetas tengo registradas").
     * "saldo": cuando pregunta por el cupo disponible, saldo o cuánto le queda en una tarjeta o en general (ej: "cuánto cupo tengo en la diners", "cuánto me queda", "saldo de la gold", "cuál es mi cupo disponible"). Extrae el nombre de la tarjeta en "consulta.tarjeta" si la menciona.
     * "ciclo_tarjeta": cuando pregunta por fechas de corte, días de pago o plazos de sus tarjetas (ej: "cuándo corta la nu", "cuándo debo pagar la diners", "fechas de corte", "cuándo es mi fecha límite de pago"). Extrae la tarjeta en "consulta.tarjeta" si la menciona.
-    * "mejor_tarjeta": cuando el usuario pide recomendación sobre qué tarjeta usar para realizar una compra (ej: "qué tarjeta uso hoy para 500 mil", "cuál tarjeta uso", "con qué tarjeta compro"). Extrae "consulta.montoSimulado" si indica un monto.
+    * "mejor_tarjeta": cuando el usuario pide recomendación sobre qué tarjeta usar para realizar una compra (ej: "qué tarjeta uso hoy para 500 mil", "cuál tarjeta uso", "con qué tarjeta compro", "quiero comprar un tv de 1.200.000 a 2 cuotas", "voy a comprar..."). Extrae "consulta.montoSimulado", si indica cuotas extrae "consulta.cuotasSimuladas" (ej: 2), y el artículo o concepto en "consulta.descripcionSimulada" (ej: "tv").
     * "deudas": cuando pregunta cuánto debe en total, saldo deudor o deudas pendientes (ej: "cuánto debo en total", "mis deudas", "deuda consolidada", "obligaciones pendientes").
     * "total_periodo": cuando pregunta cuánto ha gastado en un período específico (ej: "cuánto he gastado hoy", "gastos de esta semana", "cuánto gasté este mes", "cuánto gasté el mes pasado"). En "consulta.periodo" indica "hoy", "semana", "mes" o "mes_pasado".
     * "total_categoria": cuando pregunta cuánto ha gastado en un rubro o categoría específica (ej: "cuánto he gastado en comida", "cuánto llevo en mercado este mes", "gastos en transporte"). En "consulta.categoriaConsulta" indica la categoría (ej: "Comida", "Transporte", etc.).
@@ -89,7 +98,9 @@ Estructura JSON requerida:
     "periodo": "hoy" | "semana" | "mes" | "mes_pasado",
     "categoriaConsulta": string | null,
     "tarjeta": string | null,
-    "montoSimulado": number | null
+    "montoSimulado": number | null,
+    "cuotasSimuladas": number | null,
+    "descripcionSimulada": string | null
   },
   "pagoTarjeta": {
     "tarjeta": string
@@ -147,6 +158,62 @@ Estructura JSON requerida:
    */
   interpretarFallback(mensaje: string, contexto: ContextoMensaje): ParserResult {
     const texto = mensaje.trim().toLowerCase();
+
+    // 0. Confirmación contextual de compra previa ("lo compré", "la compré", "ya lo compré", "listo", "comprado", "lo compré con la master")
+    if (contexto.recomendacionPrevia) {
+      const limpioSinPuntuacion = texto.replace(/[/\\?¿!¡.,;:]/g, ' ').trim();
+      const confirmaCompra =
+        limpioSinPuntuacion === 'lo compre' ||
+        limpioSinPuntuacion === 'lo compré' ||
+        limpioSinPuntuacion === 'la compre' ||
+        limpioSinPuntuacion === 'la compré' ||
+        limpioSinPuntuacion === 'ya lo compre' ||
+        limpioSinPuntuacion === 'ya lo compré' ||
+        limpioSinPuntuacion === 'ya la compre' ||
+        limpioSinPuntuacion === 'ya la compré' ||
+        limpioSinPuntuacion === 'comprado' ||
+        limpioSinPuntuacion === 'comprada' ||
+        limpioSinPuntuacion === 'listo' ||
+        limpioSinPuntuacion === 'hecho' ||
+        limpioSinPuntuacion.startsWith('lo compre') ||
+        limpioSinPuntuacion.startsWith('lo compré') ||
+        limpioSinPuntuacion.startsWith('la compre') ||
+        limpioSinPuntuacion.startsWith('la compré') ||
+        limpioSinPuntuacion.startsWith('ya lo compre') ||
+        limpioSinPuntuacion.startsWith('ya lo compré') ||
+        limpioSinPuntuacion.startsWith('ya la compre') ||
+        limpioSinPuntuacion.startsWith('ya la compré') ||
+        limpioSinPuntuacion.includes('lo compré con') ||
+        limpioSinPuntuacion.includes('lo compre con') ||
+        limpioSinPuntuacion.includes('la compré con') ||
+        limpioSinPuntuacion.includes('la compre con') ||
+        (limpioSinPuntuacion.includes('compr') &&
+          Boolean(contexto.recomendacionPrevia.descripcion) &&
+          limpioSinPuntuacion.includes(contexto.recomendacionPrevia.descripcion.toLowerCase()));
+
+      if (confirmaCompra) {
+        const tarjetaMencionada = this.identificarTarjetaEnTexto(texto, contexto.tarjetasActivas);
+        const tarjetaFinal = tarjetaMencionada ?? contexto.recomendacionPrevia.tarjetaRecomendadaNombre;
+
+        return {
+          intencion: 'registro',
+          tonoDetectado: 'casual',
+          transacciones: [
+            {
+              monto: contexto.recomendacionPrevia.monto,
+              montoConfianza: 'alta',
+              categoria: contexto.recomendacionPrevia.categoria ?? 'Otros',
+              categoriaConfianza: 'alta',
+              descripcion: contexto.recomendacionPrevia.descripcion,
+              tipo: 'gasto',
+              medioPago: 'tarjeta',
+              tarjeta: tarjetaFinal,
+              cuotas: contexto.recomendacionPrevia.cuotas,
+            },
+          ],
+        };
+      }
+    }
 
     // 1. Ayuda
     if (texto === 'ayuda' || texto.includes('qué puedes hacer') || texto === 'hola' || texto === 'menu') {
@@ -345,9 +412,38 @@ Estructura JSON requerida:
       }
     }
 
-    // 10. Consulta de mejor tarjeta ("qué tarjeta uso hoy para 500 mil")
-    if (texto.includes('qué tarjeta') || texto.includes('cual tarjeta') || texto.includes('mejor tarjeta')) {
+    // 10. Consulta de mejor tarjeta ("qué tarjeta uso hoy para 500 mil", "quiero comprar un tv de 1.200.000 a 2 cuotas", "voy a comprar...")
+    const esConsultaMejorTarjeta =
+      texto.includes('qué tarjeta') ||
+      texto.includes('que tarjeta') ||
+      texto.includes('cual tarjeta') ||
+      texto.includes('cuál tarjeta') ||
+      texto.includes('mejor tarjeta') ||
+      texto.includes('con qué pago') ||
+      texto.includes('con que pago') ||
+      /(?:quiero|voy a|pienso|planeo|a)\s+comprar/i.test(texto) ||
+      texto.startsWith('comprar ');
+
+    if (esConsultaMejorTarjeta) {
       const montoSimulado = extraerMontoColombiano(texto);
+
+      // Extraer cuotas si las menciona (ej: "a 2 cuotas", "en 3 cuotas", "1 cuota")
+      let cuotasSimuladas = 1;
+      const matchCuotas = /(\d+)\s*cuotas?/i.exec(texto);
+      if (matchCuotas && matchCuotas[1]) {
+        cuotasSimuladas = Number(matchCuotas[1]);
+      }
+
+      // Extraer descripción simulada (ej: "un tv", "celular", "nevera", etc.)
+      let descripcionSimulada: string | null = null;
+      const matchDesc = /(?:comprar|compra\s+de|para)\s+(?:un\s+|una\s+|el\s+|la\s+)?([a-záéíóúñ0-9\s]+?)(?:\s+(?:de|por|\$|\d|a\s+\d+\s+cuota)|$)/i.exec(texto);
+      if (matchDesc && matchDesc[1]) {
+        const limpiaDesc = matchDesc[1].trim();
+        if (limpiaDesc.length >= 2 && !limpiaDesc.includes('tarjeta') && !limpiaDesc.includes('cuota')) {
+          descripcionSimulada = limpiaDesc;
+        }
+      }
+
       return {
         intencion: 'consulta',
         tonoDetectado: 'casual',
@@ -357,6 +453,8 @@ Estructura JSON requerida:
           categoriaConsulta: null,
           tarjeta: null,
           montoSimulado,
+          cuotasSimuladas,
+          descripcionSimulada,
         },
       };
     }

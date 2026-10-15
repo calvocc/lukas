@@ -141,12 +141,24 @@ export interface TransaccionExtraida {
   readonly cuotas: number;
 }
 
+export interface RecomendacionCompraPendiente {
+  readonly monto: number;
+  readonly descripcion: string;
+  readonly categoria?: string;
+  readonly cuotas: number;
+  readonly tarjetaRecomendadaId: string;
+  readonly tarjetaRecomendadaNombre: string;
+  readonly timestamp: number;
+}
+
 export interface ConsultaExtraida {
   readonly tipoConsulta: TipoConsulta;
   readonly periodo: PeriodoConsulta;
   readonly categoriaConsulta: string | null;
   readonly tarjeta: string | null;
   readonly montoSimulado: number | null;
+  readonly cuotasSimuladas?: number | null;
+  readonly descripcionSimulada?: string | null;
 }
 
 export interface ConfigTarjetaExtraida {
