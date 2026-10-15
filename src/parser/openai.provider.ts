@@ -63,6 +63,7 @@ Intenciones posibles:
 - "config_tarjeta": Cuando el usuario quiere agregar, registrar o configurar una tarjeta de crédito, ya sea iniciando el proceso o con datos completos (ej: "registremos una tarjeta", "agregar tarjeta", "registrar tarjeta diners davivienda cupo de 14.000.000 corte los 20 pago los 5"). Distingue entre:
     * "cupo": cupo total asignado/aprobado por el banco.
     * "cupoDisponible": cupo libre para gastar hoy. Si dice cuánto debe, cupoDisponible = cupo - deuda. Si no especifica deuda, puede ser igual a cupo o null.
+    * "tasaInteresEa": tasa de interés en porcentaje Efectivo Anual E.A. (ej: 28.5 para 28.5% E.A.). Si da mensual, conviértela a E.A. Si no la dice, null.
 - "ayuda": Preguntas sobre qué puede hacer Lukas (ej: "ayuda", "qué puedes hacer")
 - "no_entendido": Todo lo demás
 
@@ -104,6 +105,7 @@ Estructura JSON requerida:
     "banco": string | null,
     "cupo": number | null,
     "cupoDisponible": number | null,
+    "tasaInteresEa": number | null,
     "diaCorte": number | null,
     "diaPago": number | null
   },

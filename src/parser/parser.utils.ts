@@ -12,6 +12,7 @@ export interface DetallesTarjetaExtraidos {
   readonly banco: string;
   readonly cupo: number | null;
   readonly cupoDisponible?: number | null;
+  readonly tasaInteresEa?: number | null;
   readonly diaCorte: number | null;
   readonly diaPago: number | null;
 }
@@ -125,6 +126,34 @@ export function extraerDetallesTarjeta(texto: string): DetallesTarjetaExtraidos 
     }
   }
 
+  // 3.5. Tasa de Interés (% E.A. o % M.V.)
+  let tasaInteresEa: number | null = null;
+  const matchTasa = /(?:tasa|interés|interes)\s*(?:del?|de)?\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*(?:%|\bpor\s*ciento)?\s*(ea|e\.a\.|efectivo\s*anual|mv|m\.v\.|mensual|mes\s*vencido)?/i.exec(lower);
+  if (matchTasa && matchTasa[1]) {
+    const val = Number(matchTasa[1].replace(',', '.'));
+    const tipoTasa = matchTasa[2]?.toLowerCase() ?? '';
+    const esMensual = tipoTasa.includes('mv') || tipoTasa.includes('mensual') || tipoTasa.includes('vencido') || val <= 5;
+    if (esMensual) {
+      const ea = (Math.pow(1 + val / 100, 12) - 1) * 100;
+      tasaInteresEa = Math.round(ea * 10) / 10;
+    } else {
+      tasaInteresEa = val;
+    }
+  } else {
+    const matchPorcentaje = /(\d{1,2}(?:[.,]\d{1,2})?)\s*%\s*(ea|e\.a\.|efectivo\s*anual|mv|m\.v\.|mensual|mes\s*vencido)?/i.exec(lower);
+    if (matchPorcentaje && matchPorcentaje[1]) {
+      const val = Number(matchPorcentaje[1].replace(',', '.'));
+      const tipoTasa = matchPorcentaje[2]?.toLowerCase() ?? '';
+      const esMensual = tipoTasa.includes('mv') || tipoTasa.includes('mensual') || tipoTasa.includes('vencido') || val <= 5;
+      if (esMensual) {
+        const ea = (Math.pow(1 + val / 100, 12) - 1) * 100;
+        tasaInteresEa = Math.round(ea * 10) / 10;
+      } else {
+        tasaInteresEa = val;
+      }
+    }
+  }
+
   // 4. Detección de Banco Colombiano
   let banco = 'Banco';
   if (lower.includes('davivienda')) {
@@ -200,6 +229,7 @@ export function extraerDetallesTarjeta(texto: string): DetallesTarjetaExtraidos 
     banco,
     cupo,
     cupoDisponible,
+    tasaInteresEa,
     diaCorte,
     diaPago,
   };

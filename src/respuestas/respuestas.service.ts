@@ -91,6 +91,9 @@ Registra una diciendo: _"Registrar tarjeta Nu cupo 3 millones corte 15 pago 5"_.
       texto += `• 📅 *Fecha límite de pago:* ${formatearFechaLarga(mejor.fechaPago)}\n`;
       texto += `• ✂️ *Próximo corte:* ${formatearFechaCorta(mejor.fechaCorte)}\n`;
       texto += `• 💰 *Cupo disponible restante:* ${formatearMoneda(mejor.cupoDisponibleDespues)}\n`;
+      if (mejor.tarjeta.tasaInteresEa) {
+        texto += `• 📈 *Tasa de interés:* ${mejor.tarjeta.tasaInteresEa}% E.A. (ahorro en compras a varias cuotas)\n`;
+      }
       texto += `• 💡 ${mejor.mensajeEstrategico}\n`;
     } else {
       texto += `⚠️ Ninguna de tus tarjetas tiene cupo disponible suficiente para ${formatearMoneda(monto)}.\n`;
@@ -248,6 +251,7 @@ o simplemente diciendo: _"registremos una tarjeta"_ y te pediré los datos paso 
       }
       texto += `   • ✂️ *Corte:* día ${t.diaCorte} de cada mes\n`;
       texto += `   • 📅 *Pago límite:* día ${t.diaPago} de cada mes\n`;
+      texto += `   • 📈 *Tasa de interés:* ${t.tasaInteresEa ? `${t.tasaInteresEa}% E.A.` : '28.0% E.A. (estándar)'}\n`;
       texto += `   • 🛡️ *Compras a 1 cuota:* ${t.cobraInteresUnaCuota ? 'Cobra interés' : '0% interés (ideal)'}\n\n`;
     });
 
@@ -266,6 +270,7 @@ o simplemente diciendo: _"registremos una tarjeta"_ y te pediré los datos paso 
 • 🟢 *Cupo disponible para compras:* ${formatearMoneda(cupoDisp)}
 • 🔴 *Saldo en uso / utilizado:* ${formatearMoneda(usado)}
 • 💰 *Cupo total asignado:* ${formatearMoneda(cupoTotal)}
+• 📈 *Tasa de interés:* ${tarjeta.tasaInteresEa ? `${tarjeta.tasaInteresEa}% E.A.` : '28.0% E.A. (estándar)'}
 • ✂️ *Corte:* día ${tarjeta.diaCorte} | 📅 *Pago límite:* día ${tarjeta.diaPago}`;
     }
 

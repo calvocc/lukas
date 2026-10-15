@@ -24,9 +24,10 @@ export interface RegistroTarjetaPendiente {
   banco: string | null;
   cupo: number | null; // Cupo total asignado por el banco
   cupoDisponible: number | null; // Cupo disponible actualmente para compras
+  tasaInteresEa: number | null; // Tasa de interés E.A.
   diaCorte: number | null;
   diaPago: number | null;
-  pasoEsperado?: 'nombre' | 'cupo' | 'disponible' | 'corte' | 'pago';
+  pasoEsperado?: 'nombre' | 'cupo' | 'disponible' | 'tasa' | 'corte' | 'pago';
   actualizadoEn: number;
 }
 
@@ -230,6 +231,7 @@ export class CanalRouterService {
         if (tieneNombre && tieneCupo && tieneCorte && tienePago && detalles.nombre && detalles.cupo && detalles.diaCorte && detalles.diaPago) {
           const cupoTotal = detalles.cupo;
           const cupoDisponible = detalles.cupoDisponible ?? detalles.cupo;
+          const tasaInteres = detalles.tasaInteresEa ?? null;
 
           const nueva = await this.tarjetasService.crear(usuario.id, {
             nombre: detalles.nombre,
@@ -238,6 +240,7 @@ export class CanalRouterService {
             diaPago: detalles.diaPago,
             cupo: cupoTotal,
             cupoDisponible: cupoDisponible,
+            tasaInteresEa: tasaInteres,
             aceptaCompras: true,
             cobraInteresUnaCuota: false,
           });
@@ -248,6 +251,9 @@ export class CanalRouterService {
             balanceTexto += `\n• 🔴 *Saldo utilizado / por pagar:* *${formatearMoneda(saldoEnUso)}*`;
           } else {
             balanceTexto += ` _(100% libre)_`;
+          }
+          if (nueva.tasaInteresEa) {
+            balanceTexto += `\n• 📈 *Tasa de interés:* *${nueva.tasaInteresEa}% E.A.*`;
           }
 
           return `💳 *¡Tarjeta guardada con éxito!*
@@ -267,6 +273,7 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
           banco: tieneNombre ? detalles.banco : null,
           cupo: tieneCupo ? detalles.cupo : null,
           cupoDisponible: detalles.cupoDisponible ?? null,
+          tasaInteresEa: detalles.tasaInteresEa ?? null,
           diaCorte: tieneCorte ? detalles.diaCorte : null,
           diaPago: tienePago ? detalles.diaPago : null,
           actualizadoEn: Date.now(),
@@ -496,11 +503,19 @@ Prueba diciendo algo como:
 • O escribe cuánto te queda libre (ej: _$10.000.000_) o cuánto debes (ej: _"debo 4 millones"_)`;
     }
 
-    if (!sesion.diaCorte || sesion.diaCorte < 1 || sesion.diaCorte > 31) {
-      sesion.pasoEsperado = 'corte';
+    if (sesion.tasaInteresEa === null || sesion.tasaInteresEa === undefined) {
+      sesion.pasoEsperado = 'tasa';
       return `Cupo disponible anotado: *${formatearMoneda(sesion.cupoDisponible)}* 🟢
 
-4️⃣ ¿Qué *día del mes es tu fecha de corte*?
+4️⃣ ¿Cuál es la *tasa de interés* de tu tarjeta?
+(Ej: _28% EA_, _2.2% mensual_, o escribe _"omitir"_ / _"no sé"_ si no estás seguro y usaremos la tasa estándar de referencia ~28% E.A.)`;
+    }
+
+    if (!sesion.diaCorte || sesion.diaCorte < 1 || sesion.diaCorte > 31) {
+      sesion.pasoEsperado = 'corte';
+      return `Tasa de interés registrada: *${sesion.tasaInteresEa}% E.A.* 📈
+
+5️⃣ ¿Qué *día del mes es tu fecha de corte*?
 (Escribe solo el número del día, ej: _20_)`;
     }
 
@@ -508,7 +523,7 @@ Prueba diciendo algo como:
       sesion.pasoEsperado = 'pago';
       return `Corte el día *${sesion.diaCorte}* ✂️
 
-5️⃣ Por último, ¿qué *día del mes es tu fecha límite de pago*?
+6️⃣ Por último, ¿qué *día del mes es tu fecha límite de pago*?
 (Escribe solo el número del día, ej: _5_)`;
     }
 
@@ -571,7 +586,38 @@ Prueba diciendo algo como:
       }
     }
 
-    // 4. Día de Corte
+    // 4. Tasa de Interés
+    if (detalles.tasaInteresEa !== null && detalles.tasaInteresEa !== undefined) {
+      sesion.tasaInteresEa = detalles.tasaInteresEa;
+    } else if (sesion.pasoEsperado === 'tasa') {
+      if (
+        lower.includes('omitir') ||
+        lower.includes('no se') ||
+        lower.includes('no sé') ||
+        lower.includes('despues') ||
+        lower.includes('paso') ||
+        lower.includes('estandar') ||
+        lower.includes('estándar') ||
+        lower.includes('normal')
+      ) {
+        sesion.tasaInteresEa = 28.0;
+      } else {
+        const matchNum = lower.match(/(\d{1,2}(?:[.,]\d{1,2})?)/);
+        if (matchNum && matchNum[1]) {
+          const val = Number(matchNum[1].replace(',', '.'));
+          if (val <= 5 || lower.includes('mensual') || lower.includes('mv')) {
+            const ea = (Math.pow(1 + val / 100, 12) - 1) * 100;
+            sesion.tasaInteresEa = Math.round(ea * 10) / 10;
+          } else {
+            sesion.tasaInteresEa = val;
+          }
+        } else {
+          sesion.tasaInteresEa = 28.0;
+        }
+      }
+    }
+
+    // 5. Día de Corte
     if (detalles.diaCorte && detalles.diaCorte >= 1 && detalles.diaCorte <= 31) {
       sesion.diaCorte = detalles.diaCorte;
     } else if ((!sesion.diaCorte || sesion.diaCorte < 1) && sesion.pasoEsperado === 'corte') {
@@ -581,7 +627,7 @@ Prueba diciendo algo como:
       }
     }
 
-    // 5. Día de Pago
+    // 6. Día de Pago
     if (detalles.diaPago && detalles.diaPago >= 1 && detalles.diaPago <= 31) {
       sesion.diaPago = detalles.diaPago;
     } else if ((!sesion.diaPago || sesion.diaPago < 1) && sesion.pasoEsperado === 'pago') {
@@ -593,13 +639,15 @@ Prueba diciendo algo como:
 
     sesion.actualizadoEn = Date.now();
 
-    // Validar si ya se completaron los 5 datos requeridos (o 4 si disponible es igual a total)
+    // Validar si ya se completaron los datos requeridos
     if (
       sesion.nombre &&
       sesion.cupo &&
       sesion.cupo > 0 &&
       sesion.cupoDisponible !== null &&
       sesion.cupoDisponible !== undefined &&
+      sesion.tasaInteresEa !== null &&
+      sesion.tasaInteresEa !== undefined &&
       sesion.diaCorte &&
       sesion.diaCorte >= 1 &&
       sesion.diaCorte <= 31 &&
@@ -609,6 +657,7 @@ Prueba diciendo algo como:
     ) {
       const cupoTotal = sesion.cupo;
       const cupoDisponible = sesion.cupoDisponible;
+      const tasaInteres = sesion.tasaInteresEa;
 
       const nueva = await this.tarjetasService.crear(usuarioId, {
         nombre: sesion.nombre,
@@ -617,6 +666,7 @@ Prueba diciendo algo como:
         diaPago: sesion.diaPago,
         cupo: cupoTotal,
         cupoDisponible: cupoDisponible,
+        tasaInteresEa: tasaInteres,
         aceptaCompras: true,
         cobraInteresUnaCuota: false,
       });
@@ -630,6 +680,7 @@ Prueba diciendo algo como:
       } else {
         balanceTexto += ` _(100% libre)_`;
       }
+      balanceTexto += `\n• 📈 *Tasa de interés:* *${nueva.tasaInteresEa ?? 28.0}% E.A.*`;
 
       return `💳 *¡Tarjeta guardada con éxito!*
 
@@ -639,7 +690,7 @@ ${balanceTexto}
 • 📅 Día de pago: *${nueva.diaPago}* de cada mes
 
 💡 A partir de ahora, cuando vayas a comprar algo, pregúntame:
-_"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para ganar hasta 50 días libres de interés.`;
+_"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para ganar hasta 50 días libres de interés o cuál cobra menor interés a varias cuotas.`;
     }
 
     return this.pedirSiguienteDatoTarjeta(sesion);

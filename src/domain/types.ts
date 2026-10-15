@@ -73,6 +73,7 @@ export interface Tarjeta {
   readonly valorCuotaManejo: number;
   readonly tipoExoneracion: TipoExoneracion;
   readonly metaExoneracion: number;
+  readonly tasaInteresEa: number | null; // Tasa de interés E.A. (ej: 28.5 para 28.5% E.A.)
   readonly activa: boolean;
   readonly creadoEn: Date;
 }
@@ -153,6 +154,7 @@ export interface ConfigTarjetaExtraida {
   readonly banco: string | null;
   readonly cupo: number | null;
   readonly cupoDisponible?: number | null;
+  readonly tasaInteresEa?: number | null;
   readonly diaCorte: number | null;
   readonly diaPago: number | null;
 }
@@ -196,5 +198,6 @@ export interface RecomendacionTarjeta {
   readonly cupoDisponibleDespues: number;
   readonly cumpleMonto: boolean;
   readonly requiereAtencionCuotaManejo: boolean;
+  readonly tasaInteresEa?: number | null;
   readonly mensajeEstrategico: string;
 }

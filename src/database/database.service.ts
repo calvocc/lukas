@@ -18,8 +18,15 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     this.iniciarPool();
   }
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     this.iniciarPool();
+    try {
+      await this.execute(
+        'ALTER TABLE tarjetas ADD COLUMN IF NOT EXISTS tasa_interes_ea NUMERIC DEFAULT NULL',
+      );
+    } catch {
+      // Ignorar si la base de datos aún no está lista o en entornos de prueba mock
+    }
   }
 
   private iniciarPool(): void {

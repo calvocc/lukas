@@ -21,6 +21,7 @@ describe('card-optimizer: Recomendador inteligente de la mejor tarjeta', () => {
       valorCuotaManejo: 32000,
       tipoExoneracion: 'compras',
       metaExoneracion: 3,
+      tasaInteresEa: 28.5,
       activa: true,
       creadoEn: new Date(),
     },
@@ -41,6 +42,7 @@ describe('card-optimizer: Recomendador inteligente de la mejor tarjeta', () => {
       valorCuotaManejo: 0,
       tipoExoneracion: 'siempre_exenta',
       metaExoneracion: 0,
+      tasaInteresEa: 25.0,
       activa: true,
       creadoEn: new Date(),
     },
@@ -61,6 +63,7 @@ describe('card-optimizer: Recomendador inteligente de la mejor tarjeta', () => {
       valorCuotaManejo: 0,
       tipoExoneracion: 'ninguna',
       metaExoneracion: 0,
+      tasaInteresEa: 32.0,
       activa: true,
       creadoEn: new Date(),
     },
@@ -93,5 +96,13 @@ describe('card-optimizer: Recomendador inteligente de la mejor tarjeta', () => {
 
     // Debe quedar de última opción
     expect(recomendaciones[recomendaciones.length - 1]?.tarjeta.nombre).toBe('Falabella CMR');
+  });
+
+  it('debe incluir la tasa de interés en el mensaje estratégico para evaluar compras a cuotas', () => {
+    const fechaCompra = new Date(2026, 9, 16);
+    const recomendaciones = optimizarMejorTarjeta(tarjetasPrueba, 200000, fechaCompra);
+    const nu = recomendaciones.find((r) => r.tarjeta.nombre === 'Nubank Mastercard');
+    expect(nu?.tasaInteresEa).toBe(25.0);
+    expect(nu?.mensajeEstrategico).toContain('25% E.A.');
   });
 });

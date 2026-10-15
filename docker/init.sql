@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS tarjetas (
   tipo_exoneracion TEXT NOT NULL DEFAULT 'ninguna'
     CHECK (tipo_exoneracion IN ('ninguna', 'compras', 'monto', 'siempre_exenta')),
   meta_exoneracion NUMERIC DEFAULT 0,
+  tasa_interes_ea NUMERIC DEFAULT NULL,
   activa BOOLEAN NOT NULL DEFAULT TRUE,
   creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (usuario_id, nombre)

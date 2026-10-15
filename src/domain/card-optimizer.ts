@@ -57,11 +57,16 @@ export function optimizarMejorTarjeta(
       mensajeEstrategico += ` 💡 Ideal para compra pequeña y avanzar en la exoneración de cuota de manejo ($${tarjeta.valorCuotaManejo.toLocaleString('es-CO')}).`;
     }
 
+    if (tarjeta.tasaInteresEa) {
+      mensajeEstrategico += ` 📈 Tasa: ${tarjeta.tasaInteresEa}% E.A.`;
+    }
+
     // Calcular Score para ordenar:
     // Prioridad 1: Que no cobre intereses a 1 cuota (penalización severa si cobra)
     // Prioridad 2: Que tenga cupo suficiente
     // Prioridad 3: Mayor cantidad de días hasta el pago (gracia)
-    // Prioridad 4: Mayor cupo disponible restante
+    // Prioridad 4: Menor tasa de interés (ahorro si difiere a cuotas)
+    // Prioridad 5: Mayor cupo disponible restante
     let score = ciclo.diasHastaPago * 100;
 
     if (!cumpleMonto) {
@@ -69,6 +74,10 @@ export function optimizarMejorTarjeta(
     }
     if (tarjeta.cobraInteresUnaCuota) {
       score -= 500000; // Gran penalización
+    }
+    if (tarjeta.tasaInteresEa) {
+      // Bonus por menor tasa de interés (ej: 25% E.A. vs 35% E.A. suma hasta 15 puntos)
+      score += Math.max(0, 40 - tarjeta.tasaInteresEa);
     }
     score += Math.min(cupoDisponibleDespues / 100000, 50);
 
@@ -80,6 +89,7 @@ export function optimizarMejorTarjeta(
       cupoDisponibleDespues,
       cumpleMonto,
       requiereAtencionCuotaManejo,
+      tasaInteresEa: tarjeta.tasaInteresEa,
       mensajeEstrategico,
     };
 

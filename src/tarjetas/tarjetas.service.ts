@@ -28,6 +28,7 @@ interface TarjetaRow {
   valor_cuota_manejo: string | null;
   tipo_exoneracion: TipoExoneracion;
   meta_exoneracion: string | null;
+  tasa_interes_ea: string | null;
   activa: boolean;
   creado_en: string;
 }
@@ -50,6 +51,7 @@ function mapearTarjeta(row: TarjetaRow): Tarjeta {
     valorCuotaManejo: row.valor_cuota_manejo ? Number(row.valor_cuota_manejo) : 0,
     tipoExoneracion: row.tipo_exoneracion,
     metaExoneracion: row.meta_exoneracion ? Number(row.meta_exoneracion) : 0,
+    tasaInteresEa: row.tasa_interes_ea ? Number(row.tasa_interes_ea) : null,
     activa: row.activa,
     creadoEn: new Date(row.creado_en),
   };
@@ -135,6 +137,7 @@ export class TarjetasService {
       valorCuotaManejo?: number;
       tipoExoneracion?: TipoExoneracion;
       metaExoneracion?: number;
+      tasaInteresEa?: number | null;
     },
   ): Promise<Tarjeta> {
     const cupoFinal = datos.cupo ?? 0;
@@ -145,8 +148,9 @@ export class TarjetasService {
         usuario_id, nombre, banco, dia_corte, dia_pago,
         cupo, cupo_disponible, limite_ciclo,
         cobra_interes_una_cuota, acepta_compras, es_default,
-        tiene_cuota_manejo, valor_cuota_manejo, tipo_exoneracion, meta_exoneracion
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        tiene_cuota_manejo, valor_cuota_manejo, tipo_exoneracion, meta_exoneracion,
+        tasa_interes_ea
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       ON CONFLICT (usuario_id, nombre) DO UPDATE SET
         banco = EXCLUDED.banco,
         dia_corte = EXCLUDED.dia_corte,
@@ -160,6 +164,7 @@ export class TarjetasService {
         valor_cuota_manejo = EXCLUDED.valor_cuota_manejo,
         tipo_exoneracion = EXCLUDED.tipo_exoneracion,
         meta_exoneracion = EXCLUDED.meta_exoneracion,
+        tasa_interes_ea = EXCLUDED.tasa_interes_ea,
         activa = true
       RETURNING *`,
       [
@@ -178,6 +183,7 @@ export class TarjetasService {
         datos.valorCuotaManejo ?? 0,
         datos.tipoExoneracion ?? 'ninguna',
         datos.metaExoneracion ?? 0,
+        datos.tasaInteresEa ?? null,
       ],
     );
 
