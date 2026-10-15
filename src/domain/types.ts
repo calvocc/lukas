@@ -16,6 +16,7 @@ export type PeriodoConsulta = 'hoy' | 'semana' | 'mes' | 'mes_pasado';
 export type TipoConsulta =
   | 'mejor_tarjeta'
   | 'tarjetas'
+  | 'saldo'
   | 'total_periodo'
   | 'total_categoria'
   | 'balance'

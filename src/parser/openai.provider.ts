@@ -46,11 +46,15 @@ Contexto del usuario:
 
 Intenciones posibles:
 - "registro": Gasto o ingreso (ej: "85000 mercado gold", "me pagaron 3 millones")
-- "consulta": Preguntas del usuario:
-    * Si el usuario pregunta qué tarjetas tiene registradas, pide verlas o listarlas (ej: "me indicas qué tarjetas tengo registradas", "qué tarjetas tengo", "mis tarjetas", "ver tarjetas"), DEBES usar tipoConsulta: "tarjetas".
-    * Si pregunta qué tarjeta usar hoy para una compra (ej: "qué tarjeta uso hoy para 500 mil"), usa tipoConsulta: "mejor_tarjeta".
-    * Si pregunta cuánto debe en total o deudas pendientes, usa tipoConsulta: "deudas".
-    * Si pregunta cómo va este mes o balance general, usa tipoConsulta: "resumen".
+- "consulta": Preguntas o consultas del usuario. DEBES determinar la intención y el campo "consulta.tipoConsulta" exacto:
+    * "tarjetas": cuando el usuario pide ver, listar o consultar cuáles tarjetas tiene registradas (ej: "muéstrame mis tarjetas", "qué tarjetas tengo", "ver tarjetas", "tarjetas registradas", "cuáles tarjetas tengo", "hola me indicas qué tarjetas tengo registradas").
+    * "saldo": cuando pregunta por el cupo disponible, saldo o cuánto le queda en una tarjeta o en general (ej: "cuánto cupo tengo en la diners", "cuánto me queda", "saldo de la gold", "cuál es mi cupo disponible"). Extrae el nombre de la tarjeta en "consulta.tarjeta" si la menciona.
+    * "ciclo_tarjeta": cuando pregunta por fechas de corte, días de pago o plazos de sus tarjetas (ej: "cuándo corta la nu", "cuándo debo pagar la diners", "fechas de corte", "cuándo es mi fecha límite de pago"). Extrae la tarjeta en "consulta.tarjeta" si la menciona.
+    * "mejor_tarjeta": cuando el usuario pide recomendación sobre qué tarjeta usar para realizar una compra (ej: "qué tarjeta uso hoy para 500 mil", "cuál tarjeta uso", "con qué tarjeta compro"). Extrae "consulta.montoSimulado" si indica un monto.
+    * "deudas": cuando pregunta cuánto debe en total, saldo deudor o deudas pendientes (ej: "cuánto debo en total", "mis deudas", "deuda consolidada", "obligaciones pendientes").
+    * "total_periodo": cuando pregunta cuánto ha gastado en un período específico (ej: "cuánto he gastado hoy", "gastos de esta semana", "cuánto gasté este mes", "cuánto gasté el mes pasado"). En "consulta.periodo" indica "hoy", "semana", "mes" o "mes_pasado".
+    * "total_categoria": cuando pregunta cuánto ha gastado en un rubro o categoría específica (ej: "cuánto he gastado en comida", "cuánto llevo en mercado este mes", "gastos en transporte"). En "consulta.categoriaConsulta" indica la categoría (ej: "Comida", "Transporte", etc.).
+    * "resumen" o "balance": cuando pide balance general, estado del mes o cómo va (ej: "cómo voy este mes", "resumen del mes", "balance general").
 - "pago_tarjeta": Cuando el usuario dice que ya pagó su tarjeta (ej: "ya pagué la gold", "pagué nu")
 - "pago_obligacion": Cuando el usuario paga una deuda fija (ej: "pagué la cuota del kona", "pagué el arriendo")
 - "correccion": Corregir o cambiar cuotas de una compra (ej: "ya pasé la de amazon a 1 cuota", "cambiar a 1 cuota")
@@ -78,7 +82,7 @@ Estructura JSON requerida:
     }
   ],
   "consulta": {
-    "tipoConsulta": "mejor_tarjeta" | "tarjetas" | "total_periodo" | "total_categoria" | "balance" | "resumen" | "ciclo_tarjeta" | "proximos_pagos" | "deudas",
+    "tipoConsulta": "mejor_tarjeta" | "tarjetas" | "saldo" | "ciclo_tarjeta" | "total_periodo" | "total_categoria" | "balance" | "resumen" | "proximos_pagos" | "deudas",
     "periodo": "hoy" | "semana" | "mes" | "mes_pasado",
     "categoriaConsulta": string | null,
     "tarjeta": string | null,
@@ -273,7 +277,58 @@ Estructura JSON requerida:
       };
     }
 
-    // 7. Configuración de presupuesto ("mi presupuesto es 3 millones", "umbral a 4m")
+    // 7. Consulta de saldo o cupo disponible ("cuánto cupo tengo en la diners", "saldo de la gold", "cuánto me queda")
+    if (
+      texto.includes('saldo') ||
+      texto.includes('cupo disponible') ||
+      texto.includes('cuanto cupo') ||
+      texto.includes('cuánto cupo') ||
+      texto.includes('cuanto me queda') ||
+      texto.includes('cuánto me queda')
+    ) {
+      const tarjeta = this.identificarTarjetaEnTexto(texto, contexto.tarjetasActivas);
+      return {
+        intencion: 'consulta',
+        tonoDetectado: 'casual',
+        consulta: {
+          tipoConsulta: 'saldo',
+          periodo: 'mes',
+          categoriaConsulta: null,
+          tarjeta,
+          montoSimulado: null,
+        },
+      };
+    }
+
+    // 8. Consulta de fechas de corte o pago ("cuándo corta la nu", "cuándo debo pagar", "fechas de corte")
+    if (
+      texto.includes('cuando corta') ||
+      texto.includes('cuándo corta') ||
+      texto.includes('corte de la') ||
+      texto.includes('fecha de corte') ||
+      texto.includes('fechas de corte') ||
+      texto.includes('cuando pago') ||
+      texto.includes('cuándo pago') ||
+      texto.includes('cuando debo pagar') ||
+      texto.includes('cuándo debo pagar') ||
+      texto.includes('fecha de pago') ||
+      texto.includes('fechas de pago')
+    ) {
+      const tarjeta = this.identificarTarjetaEnTexto(texto, contexto.tarjetasActivas);
+      return {
+        intencion: 'consulta',
+        tonoDetectado: 'casual',
+        consulta: {
+          tipoConsulta: 'ciclo_tarjeta',
+          periodo: 'mes',
+          categoriaConsulta: null,
+          tarjeta,
+          montoSimulado: null,
+        },
+      };
+    }
+
+    // 9. Configuración de presupuesto ("mi presupuesto es 3 millones", "umbral a 4m")
     if (texto.includes('presupuesto') || texto.includes('umbral')) {
       const monto = extraerMontoColombiano(texto);
       if (monto && monto > 0) {
@@ -285,7 +340,7 @@ Estructura JSON requerida:
       }
     }
 
-    // 8. Consulta de mejor tarjeta ("qué tarjeta uso hoy para 500 mil")
+    // 10. Consulta de mejor tarjeta ("qué tarjeta uso hoy para 500 mil")
     if (texto.includes('qué tarjeta') || texto.includes('cual tarjeta') || texto.includes('mejor tarjeta')) {
       const montoSimulado = extraerMontoColombiano(texto);
       return {
@@ -301,8 +356,98 @@ Estructura JSON requerida:
       };
     }
 
-    // 9. Consultas generales ("cuánto llevo", "cómo voy", "deudas")
-    if (texto.includes('cuánto llevo') || texto.includes('cómo voy') || texto.includes('balance') || texto.includes('debo')) {
+    // 11. Consulta de gastos por período ("cuánto he gastado hoy / esta semana / el mes pasado")
+    if (
+      texto.includes('cuánto he gastado hoy') ||
+      texto.includes('cuanto he gastado hoy') ||
+      texto.includes('gasto de hoy') ||
+      texto.includes('gastos de hoy')
+    ) {
+      return {
+        intencion: 'consulta',
+        tonoDetectado: 'casual',
+        consulta: {
+          tipoConsulta: 'total_periodo',
+          periodo: 'hoy',
+          categoriaConsulta: null,
+          tarjeta: null,
+          montoSimulado: null,
+        },
+      };
+    }
+    if (
+      texto.includes('esta semana') ||
+      texto.includes('de la semana')
+    ) {
+      return {
+        intencion: 'consulta',
+        tonoDetectado: 'casual',
+        consulta: {
+          tipoConsulta: 'total_periodo',
+          periodo: 'semana',
+          categoriaConsulta: null,
+          tarjeta: null,
+          montoSimulado: null,
+        },
+      };
+    }
+    if (
+      texto.includes('mes pasado') ||
+      texto.includes('mes anterior')
+    ) {
+      return {
+        intencion: 'consulta',
+        tonoDetectado: 'casual',
+        consulta: {
+          tipoConsulta: 'total_periodo',
+          periodo: 'mes_pasado',
+          categoriaConsulta: null,
+          tarjeta: null,
+          montoSimulado: null,
+        },
+      };
+    }
+
+    // 12. Consulta de gastos por categoría ("cuánto he gastado en comida / mercado / uber")
+    if (
+      texto.includes('en comida') ||
+      texto.includes('en restaurante') ||
+      texto.includes('en mercado') ||
+      texto.includes('en transporte') ||
+      texto.includes('en servicios')
+    ) {
+      let cat = 'Otros';
+      if (texto.includes('comida') || texto.includes('restaurante') || texto.includes('mercado')) {
+        cat = 'Comida';
+      } else if (texto.includes('transporte') || texto.includes('uber') || texto.includes('taxi')) {
+        cat = 'Transporte';
+      } else if (texto.includes('servicios')) {
+        cat = 'Servicios';
+      }
+
+      return {
+        intencion: 'consulta',
+        tonoDetectado: 'casual',
+        consulta: {
+          tipoConsulta: 'total_categoria',
+          periodo: 'mes',
+          categoriaConsulta: cat,
+          tarjeta: null,
+          montoSimulado: null,
+        },
+      };
+    }
+
+    // 13. Consultas generales de deudas y balance ("cuánto llevo", "cómo voy", "deudas")
+    if (
+      texto.includes('cuánto llevo') ||
+      texto.includes('cuanto llevo') ||
+      texto.includes('cómo voy') ||
+      texto.includes('como voy') ||
+      texto.includes('balance') ||
+      texto.includes('debo') ||
+      texto.includes('deuda')
+    ) {
       const tipoConsulta = texto.includes('debo') || texto.includes('deuda') ? 'deudas' : 'resumen';
       return {
         intencion: 'consulta',
@@ -371,6 +516,30 @@ Estructura JSON requerida:
     }
 
     return { intencion: 'no_entendido', tonoDetectado: 'neutro' };
+  }
+
+  private identificarTarjetaEnTexto(
+    texto: string,
+    tarjetasActivas: readonly { id: string; nombre: string; banco: string }[],
+  ): string | null {
+    const stopwords = new Set(['en', 'la', 'el', 'de', 'mi', 'mis', 'con', 'para', 'tarjeta', 'cupo', 'saldo', 'corte', 'pago']);
+    const palabras = texto
+      .toLowerCase()
+      .replace(/[/\\?¿!¡.,;:]/g, ' ')
+      .split(/\s+/)
+      .filter((p) => p.length >= 2 && !stopwords.has(p));
+
+    for (const t of tarjetasActivas) {
+      const nom = t.nombre.toLowerCase();
+      const banco = t.banco.toLowerCase();
+      if (texto.includes(nom) || texto.includes(banco)) {
+        return t.nombre;
+      }
+      if (palabras.some((p) => nom.includes(p) || banco.includes(p))) {
+        return t.nombre;
+      }
+    }
+    return null;
   }
 
   private validarYSanitizar(obj: unknown): ParserResult {

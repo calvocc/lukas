@@ -259,6 +259,81 @@ export class MovimientosService {
   }
 
   /**
+   * Calcula el gasto acumulado según el período solicitado ('hoy', 'semana', 'mes', 'mes_pasado')
+   */
+  async calcularGastoPeriodo(
+    usuarioId: string,
+    periodo: 'hoy' | 'semana' | 'mes' | 'mes_pasado',
+  ): Promise<number> {
+    const ahora = new Date();
+    let fechaInicio: string;
+
+    if (periodo === 'hoy') {
+      fechaInicio = ahora.toISOString().split('T')[0] ?? '';
+    } else if (periodo === 'semana') {
+      const diaSemana = ahora.getDay() || 7;
+      const lunes = new Date(ahora);
+      lunes.setDate(ahora.getDate() - diaSemana + 1);
+      fechaInicio = lunes.toISOString().split('T')[0] ?? '';
+    } else if (periodo === 'mes_pasado') {
+      const mesPasado = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+      fechaInicio = mesPasado.toISOString().split('T')[0] ?? '';
+      const finMesPasado = new Date(ahora.getFullYear(), ahora.getMonth(), 0).toISOString().split('T')[0] ?? '';
+      interface TotalRow {
+        total: string | null;
+      }
+      const row = await this.db.queryOne<TotalRow>(
+        `SELECT SUM(monto) as total FROM transacciones WHERE usuario_id = $1 AND tipo = 'gasto' AND fecha >= $2 AND fecha <= $3`,
+        [usuarioId, fechaInicio, finMesPasado],
+      );
+      return row?.total ? Number(row.total) : 0;
+    } else {
+      fechaInicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString().split('T')[0] ?? '';
+    }
+
+    interface TotalRow {
+      total: string | null;
+    }
+    const row = await this.db.queryOne<TotalRow>(
+      `SELECT SUM(monto) as total FROM transacciones WHERE usuario_id = $1 AND tipo = 'gasto' AND fecha >= $2`,
+      [usuarioId, fechaInicio],
+    );
+    return row?.total ? Number(row.total) : 0;
+  }
+
+  /**
+   * Calcula el gasto acumulado en el mes para una categoría específica
+   */
+  async calcularGastoPorCategoria(
+    usuarioId: string,
+    categoriaNombre: string,
+  ): Promise<{ total: number; categoria: string; count: number }> {
+    const ahora = new Date();
+    const primerDiaMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString().split('T')[0];
+    const categoriaId = await this.resolverCategoriaId(categoriaNombre);
+    const categorias = await this.obtenerCategorias();
+    const cat = categorias.find((c) => c.id === categoriaId);
+
+    interface CatRow {
+      total: string | null;
+      cantidad: string | null;
+    }
+
+    const row = await this.db.queryOne<CatRow>(
+      `SELECT SUM(monto) as total, COUNT(*) as cantidad
+       FROM transacciones
+       WHERE usuario_id = $1 AND categoria_id = $2 AND tipo = 'gasto' AND fecha >= $3`,
+      [usuarioId, categoriaId, primerDiaMes],
+    );
+
+    return {
+      total: row?.total ? Number(row.total) : 0,
+      categoria: cat?.nombre ?? categoriaNombre,
+      count: row?.cantidad ? Number(row.cantidad) : 0,
+    };
+  }
+
+  /**
    * Obtiene compras pendientes de rediferir (cuotas > 1) que cortan pronto
    */
   async listarPendientesDeRediferir(usuarioId: string): Promise<readonly Transaccion[]> {

@@ -15,6 +15,7 @@ import { TarjetasService } from '../tarjetas/tarjetas.service';
 import { ObligacionesService } from '../obligaciones/obligaciones.service';
 import { DatabaseService } from '../database/database.service';
 import { ContextoMensaje } from '../parser/parser.interface';
+import { Tarjeta } from '../domain/types';
 import { formatearMoneda } from '../respuestas/formateador';
 import { extraerDetallesTarjeta, extraerMontoColombiano } from '../parser/parser.utils';
 
@@ -132,7 +133,10 @@ export class CanalRouterService {
 
     // 4. Intérprete: Extraer intención y datos
     const parsed = await this.parserService.interpretar(texto, contexto);
-    this.logger.log(`Intención interpretada: ${parsed.intencion} (Tono: ${parsed.tonoDetectado})`);
+    const infoConsulta = parsed.consulta
+      ? ` [tipo: ${parsed.consulta.tipoConsulta}${parsed.consulta.tarjeta ? `, tarjeta: ${parsed.consulta.tarjeta}` : ''}]`
+      : '';
+    this.logger.log(`Intención interpretada: ${parsed.intencion}${infoConsulta} (Tono: ${parsed.tonoDetectado})`);
 
     // Guardar en log de mensajes
     await this.db.execute(
@@ -266,7 +270,7 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
         await this.tarjetasService.eliminarTarjetasIncompletas(usuario.id);
         const tarjetasActualizadas = await this.tarjetasService.listarPorUsuario(usuario.id);
 
-        // Protección contra alucinaciones de la IA si el usuario preguntó por sus tarjetas registradas
+        // Protección determinista para 'tarjetas' si el usuario preguntó por sus tarjetas registradas
         if (
           lowerLimpio.includes('tarjetas tengo') ||
           lowerLimpio.includes('tarjetas registradas') ||
@@ -285,30 +289,106 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
           }
         }
 
-        if (tipoConsulta === 'tarjetas') {
-          return this.respuestasService.mensajeListadoTarjetas(tarjetasActualizadas);
+        // Protección determinista para 'saldo' si pregunta por cupo o saldo
+        if (
+          lowerLimpio.includes('saldo') ||
+          lowerLimpio.includes('cupo disponible') ||
+          lowerLimpio.includes('cuanto cupo') ||
+          lowerLimpio.includes('cuánto cupo') ||
+          lowerLimpio.includes('cuanto me queda') ||
+          lowerLimpio.includes('cuánto me queda')
+        ) {
+          if (tipoConsulta !== 'tarjetas' && tipoConsulta !== 'mejor_tarjeta') {
+            tipoConsulta = 'saldo';
+          }
         }
 
-        if (tipoConsulta === 'mejor_tarjeta') {
-          const monto = parsed.consulta?.montoSimulado ?? 100000;
-          const recomendaciones = await this.tarjetasService.recomendarMejorTarjeta(usuario.id, monto);
-          return this.respuestasService.mensajeRecomendacionTarjeta(monto, recomendaciones);
+        // Protección determinista para 'ciclo_tarjeta' si pregunta por corte o pago
+        if (
+          lowerLimpio.includes('cuando corta') ||
+          lowerLimpio.includes('cuándo corta') ||
+          lowerLimpio.includes('corte de la') ||
+          lowerLimpio.includes('fecha de corte') ||
+          lowerLimpio.includes('fechas de corte') ||
+          lowerLimpio.includes('cuando pago') ||
+          lowerLimpio.includes('cuándo pago') ||
+          lowerLimpio.includes('cuando debo pagar') ||
+          lowerLimpio.includes('cuándo debo pagar') ||
+          lowerLimpio.includes('fecha de pago') ||
+          lowerLimpio.includes('fechas de pago')
+        ) {
+          if (tipoConsulta !== 'tarjetas' && tipoConsulta !== 'mejor_tarjeta') {
+            tipoConsulta = 'ciclo_tarjeta';
+          }
         }
 
-        if (tipoConsulta === 'deudas') {
-          return this.respuestasService.mensajeResumenDeudas(tarjetasActualizadas, obligaciones);
+        // Si se especificó una tarjeta en la consulta o en el texto
+        let tarjetaObjetivo: Tarjeta | null = null;
+        const nombreTarjetaBuscada = parsed.consulta?.tarjeta;
+        if (nombreTarjetaBuscada) {
+          tarjetaObjetivo = await this.tarjetasService.buscarPorNombreOAlias(usuario.id, nombreTarjetaBuscada);
+        }
+        if (!tarjetaObjetivo && tarjetasActualizadas.length > 0) {
+          for (const t of tarjetasActualizadas) {
+            if (
+              lowerLimpio.includes(t.nombre.toLowerCase()) ||
+              lowerLimpio.includes(t.banco.toLowerCase())
+            ) {
+              tarjetaObjetivo = t;
+              break;
+            }
+          }
         }
 
-        // Resumen / Balance
-        const gastoMes = await this.movimientosService.calcularGastoMesActual(usuario.id);
-        const limitePresupuesto = usuario.limiteGastoMensual;
-        let respuesta = `📊 *Balance del Mes:*\n\n• Gasto total acumulado: *${formatearMoneda(gastoMes)}*`;
-        if (limitePresupuesto) {
-          const pct = Math.round((gastoMes / limitePresupuesto) * 100);
-          respuesta += `\n• Presupuesto mensual: *${formatearMoneda(limitePresupuesto)}* (${pct}% consumido)`;
+        switch (tipoConsulta) {
+          case 'tarjetas':
+            return this.respuestasService.mensajeListadoTarjetas(tarjetasActualizadas);
+
+          case 'saldo':
+            return this.respuestasService.mensajeConsultaSaldo(tarjetaObjetivo, tarjetasActualizadas);
+
+          case 'ciclo_tarjeta':
+            return this.respuestasService.mensajeConsultaCiclo(tarjetaObjetivo, tarjetasActualizadas);
+
+          case 'mejor_tarjeta': {
+            const monto = parsed.consulta?.montoSimulado ?? 100000;
+            const recomendaciones = await this.tarjetasService.recomendarMejorTarjeta(usuario.id, monto);
+            return this.respuestasService.mensajeRecomendacionTarjeta(monto, recomendaciones);
+          }
+
+          case 'deudas':
+            return this.respuestasService.mensajeResumenDeudas(tarjetasActualizadas, obligaciones);
+
+          case 'total_periodo': {
+            const periodo = parsed.consulta?.periodo ?? 'mes';
+            const gastoPeriodo = await this.movimientosService.calcularGastoPeriodo(usuario.id, periodo);
+            return this.respuestasService.mensajeGastoPeriodo(
+              periodo,
+              gastoPeriodo,
+              usuario.limiteGastoMensual,
+            );
+          }
+
+          case 'total_categoria': {
+            const categoria = parsed.consulta?.categoriaConsulta ?? 'Otros';
+            const resCat = await this.movimientosService.calcularGastoPorCategoria(usuario.id, categoria);
+            return this.respuestasService.mensajeGastoCategoria(categoria, resCat.total, resCat.count);
+          }
+
+          case 'balance':
+          case 'resumen':
+          default: {
+            const gastoMes = await this.movimientosService.calcularGastoMesActual(usuario.id);
+            const limitePresupuesto = usuario.limiteGastoMensual;
+            let respuesta = `📊 *Balance del Mes:*\n\n• Gasto total acumulado: *${formatearMoneda(gastoMes)}*`;
+            if (limitePresupuesto) {
+              const pct = Math.round((gastoMes / limitePresupuesto) * 100);
+              respuesta += `\n• Presupuesto mensual: *${formatearMoneda(limitePresupuesto)}* (${pct}% consumido)`;
+            }
+            respuesta += `\n• Tarjetas activas: ${tarjetasActualizadas.length}\n• Obligaciones activas: ${obligaciones.length}`;
+            return respuesta;
+          }
         }
-        respuesta += `\n• Tarjetas activas: ${tarjetasActualizadas.length}\n• Obligaciones activas: ${obligaciones.length}`;
-        return respuesta;
       }
 
       case 'registro': {

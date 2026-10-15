@@ -254,4 +254,91 @@ o simplemente diciendo: _"registremos una tarjeta"_ y te pediré los datos paso 
     texto += `💡 *El Método Lukas:* Pregúntame _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré cuál te da más días de financiamiento gratis.`;
     return texto.trim();
   }
+
+  mensajeConsultaSaldo(tarjeta: Tarjeta | null, tarjetas: readonly Tarjeta[]): string {
+    if (tarjeta) {
+      const cupoTotal = tarjeta.cupo ?? 0;
+      const cupoDisp = tarjeta.cupoDisponible ?? cupoTotal;
+      const usado = Math.max(0, cupoTotal - cupoDisp);
+
+      return `💳 *Saldo y Cupo de ${tarjeta.nombre}* (${tarjeta.banco}):
+
+• 🟢 *Cupo disponible para compras:* ${formatearMoneda(cupoDisp)}
+• 🔴 *Saldo en uso / utilizado:* ${formatearMoneda(usado)}
+• 💰 *Cupo total asignado:* ${formatearMoneda(cupoTotal)}
+• ✂️ *Corte:* día ${tarjeta.diaCorte} | 📅 *Pago límite:* día ${tarjeta.diaPago}`;
+    }
+
+    if (tarjetas.length === 0) {
+      return `💳 No tienes tarjetas registradas aún. Di _"registremos una tarjeta"_ para agregar la primera.`;
+    }
+
+    let texto = `💳 *Resumen de Saldos y Cupos:*\n\n`;
+    let cupoTotalGlobal = 0;
+    let cupoDispGlobal = 0;
+
+    tarjetas.forEach((t) => {
+      const total = t.cupo ?? 0;
+      const disp = t.cupoDisponible ?? total;
+      const usado = Math.max(0, total - disp);
+      cupoTotalGlobal += total;
+      cupoDispGlobal += disp;
+
+      texto += `• *${t.nombre}:* Disponible *${formatearMoneda(disp)}* (Usado: ${formatearMoneda(usado)})\n`;
+    });
+
+    texto += `\n💰 *Total cupo disponible global:* *${formatearMoneda(cupoDispGlobal)}* de ${formatearMoneda(cupoTotalGlobal)}`;
+    return texto;
+  }
+
+  mensajeConsultaCiclo(tarjeta: Tarjeta | null, tarjetas: readonly Tarjeta[]): string {
+    if (tarjeta) {
+      return `🗓️ *Fechas de Ciclo para ${tarjeta.nombre}* (${tarjeta.banco}):
+
+• ✂️ *Día de corte:* ${tarjeta.diaCorte} de cada mes
+• 📅 *Día límite de pago:* ${tarjeta.diaPago} de cada mes
+• 🎯 *Estrategia Lukas:* Si compras justo el día después del corte (${tarjeta.diaCorte + 1 <= 31 ? tarjeta.diaCorte + 1 : 1}), tienes entre *45 y 55 días de financiamiento gratis* a tasa 0% pagando a 1 cuota.`;
+    }
+
+    if (tarjetas.length === 0) {
+      return `💳 No tienes tarjetas registradas aún. Di _"registremos una tarjeta"_ para comenzar.`;
+    }
+
+    let texto = `🗓️ *Fechas de Corte y Pago de tus Tarjetas:*\n\n`;
+    tarjetas.forEach((t) => {
+      texto += `• 💳 *${t.nombre}:* Corte día *${t.diaCorte}* | Pago día *${t.diaPago}*\n`;
+    });
+    texto += `\n💡 *Recuerda:* Compra siempre después del corte para maximizar tus días libres de interés.`;
+    return texto;
+  }
+
+  mensajeGastoPeriodo(periodo: string, gasto: number, limitePresupuesto?: number | null): string {
+    const periodoLabel =
+      periodo === 'hoy'
+        ? 'hoy'
+        : periodo === 'semana'
+          ? 'esta semana'
+          : periodo === 'mes_pasado'
+            ? 'el mes pasado'
+            : 'este mes';
+
+    let texto = `📊 *Gastos acumulados ${periodoLabel}:*\n\n• Total gastado: *${formatearMoneda(gasto)}*`;
+
+    if (periodo === 'mes' && limitePresupuesto && limitePresupuesto > 0) {
+      const pct = Math.round((gasto / limitePresupuesto) * 100);
+      const restante = Math.max(0, limitePresupuesto - gasto);
+      texto += `\n• Presupuesto mensual: *${formatearMoneda(limitePresupuesto)}* (${pct}% consumido)`;
+      texto += `\n• Margen restante: *${formatearMoneda(restante)}*`;
+    }
+
+    return texto;
+  }
+
+  mensajeGastoCategoria(categoria: string, total: number, count: number): string {
+    if (total === 0) {
+      return `🏷️ No tienes gastos registrados en la categoría *${categoria}* este mes.`;
+    }
+
+    return `🏷️ *Gastos en ${categoria} (este mes):*\n\n• Total acumulado: *${formatearMoneda(total)}*\n• Número de compras: *${count}*`;
+  }
 }
