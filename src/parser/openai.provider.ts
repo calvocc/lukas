@@ -165,13 +165,19 @@ Estructura JSON requerida:
         .replace('pague', '')
         .trim();
 
+      const nombreLimpio = partes
+        .replace(/^(la|el|las|los|mi|mis|cuota del|cuota de la|cuota de|de la|del)\s+/i, '')
+        .trim();
+
       // Buscar coincidencia en tarjetas
       const tarjeta = contexto.tarjetasActivas.find(
         (t) =>
           partes.includes(t.nombre.toLowerCase()) ||
           partes.includes(t.banco.toLowerCase()) ||
-          t.nombre.toLowerCase().includes(partes) ||
-          t.banco.toLowerCase().includes(partes),
+          nombreLimpio.includes(t.nombre.toLowerCase()) ||
+          nombreLimpio.includes(t.banco.toLowerCase()) ||
+          t.nombre.toLowerCase().includes(nombreLimpio) ||
+          t.banco.toLowerCase().includes(nombreLimpio),
       );
       if (tarjeta) {
         return {
@@ -181,8 +187,11 @@ Estructura JSON requerida:
         };
       }
       // Si no es tarjeta, buscar en obligaciones
-      const obligacion = contexto.obligacionesActivas.find((o) =>
-        partes.includes(o.nombre.toLowerCase()) || o.nombre.toLowerCase().includes(partes),
+      const obligacion = contexto.obligacionesActivas.find(
+        (o) =>
+          partes.includes(o.nombre.toLowerCase()) ||
+          nombreLimpio.includes(o.nombre.toLowerCase()) ||
+          o.nombre.toLowerCase().includes(nombreLimpio),
       );
       if (obligacion) {
         return {

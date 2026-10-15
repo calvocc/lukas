@@ -20,6 +20,9 @@ import { formatearMoneda } from '../respuestas/formateador';
 @Injectable()
 export class CanalRouterService {
   private readonly logger = new Logger(CanalRouterService.name);
+  // Rate limiting en memoria (mensajes por minuto por usuario)
+  private readonly historialMensajes = new Map<string, number[]>();
+  private readonly MAX_MENSAJES_POR_MINUTO = 15;
 
   constructor(
     private readonly usuariosService: UsuariosService,
@@ -31,10 +34,25 @@ export class CanalRouterService {
     private readonly db: DatabaseService,
   ) {}
 
+  private validarRateLimit(numero: string): boolean {
+    const ahora = Date.now();
+    const timestamps = this.historialMensajes.get(numero) ?? [];
+    // Filtrar solo los del último minuto
+    const recientes = timestamps.filter((t) => ahora - t < 60000);
+    recientes.push(ahora);
+    this.historialMensajes.set(numero, recientes);
+    return recientes.length <= this.MAX_MENSAJES_POR_MINUTO;
+  }
+
   async procesarMensaje(numeroWhatsapp: string, textoMensaje: string): Promise<string> {
     const texto = textoMensaje.trim();
     if (!texto) {
       return '';
+    }
+
+    // Rate Limiting para proteger el canal de WhatsApp
+    if (!this.validarRateLimit(numeroWhatsapp)) {
+      return '⏳ Estás enviando mensajes muy rápido. Espera un momento para no saturar el canal de WhatsApp.';
     }
 
     // 1. Identificar o registrar usuario (Cuenta: Bienvenido a Lukas)
