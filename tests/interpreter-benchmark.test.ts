@@ -127,4 +127,38 @@ describe('Set de Pruebas del Intérprete: Mensajes Reales en Español Colombiano
       expect(res.intencion).toBe('ayuda');
     });
   });
+
+  // Categoría 5: Tarjetas y Formatos Colombianos (Casos Reales Reportados)
+  describe('5. Registro y Consulta de Tarjetas con Formatos Colombianos', () => {
+    it('"registar tarjeta dinner davivienda cupo de 14.000.000 corte los 20 pago los 5" -> config_tarjeta con 14 millones, corte 20 y pago 5', async () => {
+      const res = await provider.interpretar(
+        'registar tarjeta dinner davivienda cupo de 14.000.000 corte los 20 pago los 5',
+        contexto,
+      );
+      expect(res.intencion).toBe('config_tarjeta');
+      expect(res.configTarjeta?.cupo).toBe(14000000);
+      expect(res.configTarjeta?.diaCorte).toBe(20);
+      expect(res.configTarjeta?.diaPago).toBe(5);
+      expect(res.configTarjeta?.banco).toBe('Davivienda');
+      expect(res.configTarjeta?.nombre).toContain('Diners');
+    });
+
+    it('"muestrame las tarjetas que tengo registradas" -> Consulta tipo tarjetas', async () => {
+      const res = await provider.interpretar('muestrame las tarjetas que tengo registradas', contexto);
+      expect(res.intencion).toBe('consulta');
+      expect(res.consulta?.tipoConsulta).toBe('tarjetas');
+    });
+
+    it('"mis tarjetas" -> Consulta tipo tarjetas', async () => {
+      const res = await provider.interpretar('mis tarjetas', contexto);
+      expect(res.intencion).toBe('consulta');
+      expect(res.consulta?.tipoConsulta).toBe('tarjetas');
+    });
+
+    it('"85.000 mercado en efectivo" -> Gasto comida $85.000 respetando puntos de miles', async () => {
+      const res = await provider.interpretar('85.000 mercado en efectivo', contexto);
+      expect(res.intencion).toBe('registro');
+      expect(res.transacciones?.[0]?.monto).toBe(85000);
+    });
+  });
 });

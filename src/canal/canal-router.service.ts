@@ -16,6 +16,7 @@ import { ObligacionesService } from '../obligaciones/obligaciones.service';
 import { DatabaseService } from '../database/database.service';
 import { ContextoMensaje } from '../parser/parser.interface';
 import { formatearMoneda } from '../respuestas/formateador';
+import { extraerDetallesTarjeta } from '../parser/parser.utils';
 
 @Injectable()
 export class CanalRouterService {
@@ -190,44 +191,12 @@ export class CanalRouterService {
       }
 
       case 'config_tarjeta': {
-        // Registro guiado o extraído de tarjeta
-        // Si el usuario escribe: "Registrar tarjeta Nu cupo 3 millones corte 15 pago 5"
-        const numMatches = texto.match(/\d+/g);
-        let diaCorte = 15;
-        let diaPago = 5;
-        let cupo = 3000000;
-
-        const corteIdx = texto.indexOf('corte');
-        if (corteIdx !== -1) {
-          const despues = texto.slice(corteIdx);
-          const corteNum = despues.match(/\d+/);
-          if (corteNum) diaCorte = Number(corteNum[0]);
-        }
-
-        const pagoIdx = texto.indexOf('pago');
-        if (pagoIdx !== -1) {
-          const despues = texto.slice(pagoIdx);
-          const pagoNum = despues.match(/\d+/);
-          if (pagoNum) diaPago = Number(pagoNum[0]);
-        }
-
-        if (numMatches && numMatches[0]) {
-          cupo = Number(numMatches[0]);
-          if (texto.includes('millon') && cupo < 1000) cupo *= 1000000;
-        }
-
-        let banco = 'Banco';
-        let nombre = 'Mi Tarjeta';
-        if (texto.toLowerCase().includes('nu')) {
-          banco = 'Nubank';
-          nombre = 'Nubank';
-        } else if (texto.toLowerCase().includes('bancolombia')) {
-          banco = 'Bancolombia';
-          nombre = 'Bancolombia';
-        } else if (texto.toLowerCase().includes('falabella')) {
-          banco = 'Falabella';
-          nombre = 'Falabella CMR';
-        }
+        const detalles = parsed.configTarjeta ?? extraerDetallesTarjeta(texto);
+        const diaCorte = detalles.diaCorte ?? 15;
+        const diaPago = detalles.diaPago ?? 5;
+        const cupo = detalles.cupo ?? 3000000;
+        const nombre = detalles.nombre && detalles.nombre !== 'Mi Tarjeta' ? detalles.nombre : 'Tarjeta Crédito';
+        const banco = detalles.banco && detalles.banco !== 'Banco' ? detalles.banco : 'Banco';
 
         const nueva = await this.tarjetasService.crear(usuario.id, {
           nombre,
@@ -253,6 +222,10 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
 
       case 'consulta': {
         const tipoConsulta = parsed.consulta?.tipoConsulta ?? 'resumen';
+
+        if (tipoConsulta === 'tarjetas') {
+          return this.respuestasService.mensajeListadoTarjetas(tarjetas);
+        }
 
         if (tipoConsulta === 'mejor_tarjeta') {
           const monto = parsed.consulta?.montoSimulado ?? 100000;

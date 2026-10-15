@@ -15,6 +15,7 @@ export type TipoObligacion = 'deuda' | 'fijo';
 export type PeriodoConsulta = 'hoy' | 'semana' | 'mes' | 'mes_pasado';
 export type TipoConsulta =
   | 'mejor_tarjeta'
+  | 'tarjetas'
   | 'total_periodo'
   | 'total_categoria'
   | 'balance'
@@ -146,6 +147,14 @@ export interface ConsultaExtraida {
   readonly montoSimulado: number | null;
 }
 
+export interface ConfigTarjetaExtraida {
+  readonly nombre: string | null;
+  readonly banco: string | null;
+  readonly cupo: number | null;
+  readonly diaCorte: number | null;
+  readonly diaPago: number | null;
+}
+
 export interface ParserResult {
   readonly intencion: IntencionMensaje;
   readonly tonoDetectado: TonoVoz;
@@ -160,6 +169,7 @@ export interface ParserResult {
   readonly configPresupuesto?: {
     readonly limiteGastoMensual: number;
   };
+  readonly configTarjeta?: ConfigTarjetaExtraida;
   readonly correccionCuotas?: {
     readonly tarjeta?: string;
     readonly nuevasCuotas: number;

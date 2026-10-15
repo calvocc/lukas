@@ -224,4 +224,33 @@ ${transaccion.medioPago === 'tarjeta' ? 'El cupo de tu tarjeta ha sido restablec
 
     return texto;
   }
+
+  mensajeListadoTarjetas(tarjetas: readonly Tarjeta[]): string {
+    if (tarjetas.length === 0) {
+      return `💳 Aún no tienes tarjetas de crédito registradas.
+
+Puedes registrar una fácilmente escribiendo, por ejemplo:
+_"Registrar tarjeta Diners Davivienda cupo de 14.000.000 corte los 20 pago los 5"_`;
+    }
+
+    let texto = `💳 *Tus Tarjetas de Crédito Registradas:*\n\n`;
+    tarjetas.forEach((t, i) => {
+      const cupoTotal = t.cupo ?? 0;
+      const cupoDisp = t.cupoDisponible ?? cupoTotal;
+      const usado = Math.max(0, cupoTotal - cupoDisp);
+
+      texto += `${i + 1}. 💳 *${t.nombre}* (${t.banco})\n`;
+      texto += `   • 💰 *Cupo total:* ${formatearMoneda(cupoTotal)}\n`;
+      texto += `   • 🟢 *Cupo disponible:* ${formatearMoneda(cupoDisp)}\n`;
+      if (usado > 0) {
+        texto += `   • 🔴 *Saldo utilizado:* ${formatearMoneda(usado)}\n`;
+      }
+      texto += `   • ✂️ *Corte:* día ${t.diaCorte} de cada mes\n`;
+      texto += `   • 📅 *Pago límite:* día ${t.diaPago} de cada mes\n`;
+      texto += `   • 🛡️ *Compras a 1 cuota:* ${t.cobraInteresUnaCuota ? 'Cobra interés' : '0% interés (ideal)'}\n\n`;
+    });
+
+    texto += `💡 *El Método Lukas:* Pregúntame _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré cuál te da más días de financiamiento gratis.`;
+    return texto.trim();
+  }
 }

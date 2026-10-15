@@ -11,6 +11,7 @@ import OpenAI from 'openai';
 import { LukasConfigService } from '../config/config.service';
 import { ParserResult } from '../domain/types';
 import { ProveedorIA, ContextoMensaje } from './parser.interface';
+import { extraerMontoColombiano, extraerDetallesTarjeta } from './parser.utils';
 
 @Injectable()
 export class OpenAiProvider implements ProveedorIA {
@@ -45,13 +46,13 @@ Contexto del usuario:
 
 Intenciones posibles:
 - "registro": Gasto o ingreso (ej: "85000 mercado gold", "me pagaron 3 millones")
-- "consulta": Preguntas sobre saldos, fechas de pago, mejor tarjeta a usar hoy (ej: "qué tarjeta uso hoy para 500 mil", "cuánto debo en total", "cómo voy este mes")
+- "consulta": Preguntas sobre saldos, fechas de pago, tarjetas registradas, mejor tarjeta a usar hoy (ej: "qué tarjeta uso hoy para 500 mil", "muéstrame mis tarjetas", "cuáles tarjetas tengo", "cuánto debo en total", "cómo voy este mes")
 - "pago_tarjeta": Cuando el usuario dice que ya pagó su tarjeta (ej: "ya pagué la gold", "pagué nu")
 - "pago_obligacion": Cuando el usuario paga una deuda fija (ej: "pagué la cuota del kona", "pagué el arriendo")
 - "correccion": Corregir o cambiar cuotas de una compra (ej: "ya pasé la de amazon a 1 cuota", "cambiar a 1 cuota")
 - "eliminacion": Borrar la última transacción (ej: "borra el último", "elimina ese gasto")
 - "config_presupuesto": Establecer o modificar el tope mensual de gasto global (ej: "mi presupuesto este mes es 3 millones", "cambiar umbral a 4.5m")
-- "config_tarjeta": Agregar o configurar una tarjeta de crédito
+- "config_tarjeta": Agregar o configurar una tarjeta de crédito (ej: "registrar tarjeta diners davivienda cupo de 14.000.000 corte los 20 pago los 5")
 - "ayuda": Preguntas sobre qué puede hacer Lukas (ej: "ayuda", "qué puedes hacer")
 - "no_entendido": Todo lo demás
 
@@ -73,7 +74,7 @@ Estructura JSON requerida:
     }
   ],
   "consulta": {
-    "tipoConsulta": "mejor_tarjeta" | "total_periodo" | "total_categoria" | "balance" | "resumen" | "ciclo_tarjeta" | "proximos_pagos" | "deudas",
+    "tipoConsulta": "mejor_tarjeta" | "tarjetas" | "total_periodo" | "total_categoria" | "balance" | "resumen" | "ciclo_tarjeta" | "proximos_pagos" | "deudas",
     "periodo": "hoy" | "semana" | "mes" | "mes_pasado",
     "categoriaConsulta": string | null,
     "tarjeta": string | null,
@@ -87,6 +88,13 @@ Estructura JSON requerida:
   },
   "configPresupuesto": {
     "limiteGastoMensual": number
+  },
+  "configTarjeta": {
+    "nombre": string | null,
+    "banco": string | null,
+    "cupo": number | null,
+    "diaCorte": number | null,
+    "diaPago": number | null
   },
   "correccionCuotas": {
     "tarjeta": string | null,
@@ -137,14 +145,20 @@ Estructura JSON requerida:
       return { intencion: 'eliminacion', tonoDetectado: 'casual' };
     }
 
-    // 3. Registrar o agregar tarjeta de crédito
-    if (
-      texto.includes('registrar tarjeta') ||
-      texto.includes('agregar tarjeta') ||
-      texto.includes('crear tarjeta') ||
-      texto.includes('nueva tarjeta')
-    ) {
-      return { intencion: 'config_tarjeta', tonoDetectado: 'casual' };
+    // 3. Registrar o agregar tarjeta de crédito (tolera errores como "registar", "dinner", etc.)
+    const tienePalabraTarjeta = texto.includes('tarjeta') || texto.includes('tc');
+    const tieneCorteOPago = texto.includes('corte') && (texto.includes('pago') || texto.includes('cupo'));
+    const esComandoRegistroTarjeta =
+      /(?:regis?tr?ar?|agreg?ar?|crear|meter|guardar|inscribir|nueva)\s+(?:mi\s+)?tarjeta/i.test(texto) ||
+      (tienePalabraTarjeta && (texto.includes('cupo') || tieneCorteOPago));
+
+    if (esComandoRegistroTarjeta) {
+      const configTarjeta = extraerDetallesTarjeta(mensaje);
+      return {
+        intencion: 'config_tarjeta',
+        tonoDetectado: 'casual',
+        configTarjeta,
+      };
     }
 
     // 4. Pago de tarjeta ("ya pagué la gold", "pagué nu")
@@ -223,18 +237,41 @@ Estructura JSON requerida:
       };
     }
 
-    // 5. Configuración de presupuesto ("mi presupuesto es 3 millones", "umbral a 4m")
+    // 6. Consulta de tarjetas registradas ("mis tarjetas", "muéstrame las tarjetas", etc.)
+    if (
+      texto.includes('mis tarjetas') ||
+      texto.includes('ver tarjetas') ||
+      texto.includes('mostrar tarjetas') ||
+      texto.includes('muestrame las tarjetas') ||
+      texto.includes('muéstrame las tarjetas') ||
+      texto.includes('muestrame mis tarjetas') ||
+      texto.includes('muéstrame mis tarjetas') ||
+      texto.includes('cuáles tarjetas') ||
+      texto.includes('cuales tarjetas') ||
+      texto.includes('qué tarjetas tengo') ||
+      texto.includes('que tarjetas tengo') ||
+      texto.includes('tarjetas que tengo') ||
+      texto.includes('tarjetas registradas') ||
+      texto.includes('listar tarjetas') ||
+      texto === 'tarjetas'
+    ) {
+      return {
+        intencion: 'consulta',
+        tonoDetectado: 'casual',
+        consulta: {
+          tipoConsulta: 'tarjetas',
+          periodo: 'mes',
+          categoriaConsulta: null,
+          tarjeta: null,
+          montoSimulado: null,
+        },
+      };
+    }
+
+    // 7. Configuración de presupuesto ("mi presupuesto es 3 millones", "umbral a 4m")
     if (texto.includes('presupuesto') || texto.includes('umbral')) {
-      const montoMatch = texto.match(/\d+([.,]\d+)?/);
-      let monto = 0;
-      if (montoMatch) {
-        const numStr = montoMatch[0]?.replace(/\./g, '') ?? '0';
-        monto = Number(numStr);
-        if (texto.includes('millon') || texto.includes('millones') || texto.endsWith('m')) {
-          if (monto < 1000) monto *= 1000000;
-        }
-      }
-      if (monto > 0) {
+      const monto = extraerMontoColombiano(texto);
+      if (monto && monto > 0) {
         return {
           intencion: 'config_presupuesto',
           tonoDetectado: 'casual',
@@ -243,16 +280,9 @@ Estructura JSON requerida:
       }
     }
 
-    // 6. Consulta de mejor tarjeta ("qué tarjeta uso hoy para 500 mil")
+    // 8. Consulta de mejor tarjeta ("qué tarjeta uso hoy para 500 mil")
     if (texto.includes('qué tarjeta') || texto.includes('cual tarjeta') || texto.includes('mejor tarjeta')) {
-      const numeros = texto.match(/\d+/g);
-      let montoSimulado: number | null = null;
-      if (numeros && numeros.length > 0) {
-        const numStr = numeros.join('');
-        montoSimulado = Number(numStr);
-        if (texto.includes('mil') && montoSimulado < 10000) montoSimulado *= 1000;
-        if (texto.includes('millon') && montoSimulado < 1000) montoSimulado *= 1000000;
-      }
+      const montoSimulado = extraerMontoColombiano(texto);
       return {
         intencion: 'consulta',
         tonoDetectado: 'casual',
@@ -266,7 +296,7 @@ Estructura JSON requerida:
       };
     }
 
-    // 7. Consultas generales ("cuánto llevo", "cómo voy", "deudas")
+    // 9. Consultas generales ("cuánto llevo", "cómo voy", "deudas")
     if (texto.includes('cuánto llevo') || texto.includes('cómo voy') || texto.includes('balance') || texto.includes('debo')) {
       const tipoConsulta = texto.includes('debo') || texto.includes('deuda') ? 'deudas' : 'resumen';
       return {
@@ -282,12 +312,9 @@ Estructura JSON requerida:
       };
     }
 
-    // 8. Registro de gasto/ingreso mediante extracción de números
-    const numeros = texto.match(/\d+/g);
-    if (numeros && numeros.length > 0) {
-      let monto = Number(numeros[0]);
-      if (texto.includes('mil') && monto < 1000) monto *= 1000;
-
+    // 10. Registro de gasto/ingreso mediante extracción de montos colombianos
+    const monto = extraerMontoColombiano(texto);
+    if (monto && monto > 0) {
       // Buscar si menciona alguna tarjeta
       let tarjetaEncontrada: string | null = null;
       const palabras = texto.split(/\s+/);
@@ -367,6 +394,9 @@ Estructura JSON requerida:
         : undefined,
       configPresupuesto: typeof rec['configPresupuesto'] === 'object' && rec['configPresupuesto'] !== null
         ? (rec['configPresupuesto'] as ParserResult['configPresupuesto'])
+        : undefined,
+      configTarjeta: typeof rec['configTarjeta'] === 'object' && rec['configTarjeta'] !== null
+        ? (rec['configTarjeta'] as ParserResult['configTarjeta'])
         : undefined,
       correccionCuotas: typeof rec['correccionCuotas'] === 'object' && rec['correccionCuotas'] !== null
         ? (rec['correccionCuotas'] as ParserResult['correccionCuotas'])
