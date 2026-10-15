@@ -171,7 +171,7 @@ describe('Flujo Conversacional Guiado: Registro de Tarjetas', () => {
     expect(res).toContain('1️⃣ ¿Cuál es el *banco y franquicia o categoría*');
   });
 
-  it('Flujo completo paso a paso: pide nombre -> cupo -> corte -> pago y luego guarda', async () => {
+  it('Flujo completo paso a paso: pide nombre -> cupo total -> cupo disponible -> corte -> pago y luego guarda', async () => {
     // Paso 1: Iniciar registro
     const res1 = await router.procesarMensaje(usuarioActivo.numeroWhatsapp, 'registremos una tarjeta');
     expect(res1).toContain('1️⃣ ¿Cuál es el *banco y franquicia o categoría*');
@@ -180,28 +180,36 @@ describe('Flujo Conversacional Guiado: Registro de Tarjetas', () => {
     // Paso 2: Usuario proporciona banco y franquicia
     const res2 = await router.procesarMensaje(usuarioActivo.numeroWhatsapp, 'Diners Davivienda');
     expect(res2).toContain('Diners Club Davivienda');
-    expect(res2).toContain('2️⃣ ¿Cuál es tu *cupo total asignado*?');
+    expect(res2).toContain('2️⃣ ¿Cuál es tu *cupo total aprobado por el banco*?');
     expect(tarjetasGuardadas.length).toBe(0);
 
-    // Paso 3: Usuario proporciona cupo
+    // Paso 3: Usuario proporciona cupo total
     const res3 = await router.procesarMensaje(usuarioActivo.numeroWhatsapp, '14.000.000');
     expect(res3).toContain('$14.000.000');
-    expect(res3).toContain('3️⃣ ¿Qué *día del mes es tu fecha de corte*?');
+    expect(res3).toContain('3️⃣ ¿Cuánto tienes de *cupo disponible para compras hoy*?');
     expect(tarjetasGuardadas.length).toBe(0);
 
-    // Paso 4: Usuario proporciona día de corte
-    const res4 = await router.procesarMensaje(usuarioActivo.numeroWhatsapp, 'los 20');
-    expect(res4).toContain('Corte el día *20*');
-    expect(res4).toContain('4️⃣ Por último, ¿qué *día del mes es tu fecha límite de pago*?');
+    // Paso 4: Usuario indica que está al 100% libre diciendo "todo"
+    const res4 = await router.procesarMensaje(usuarioActivo.numeroWhatsapp, 'todo');
+    expect(res4).toContain('Cupo disponible anotado: *$14.000.000*');
+    expect(res4).toContain('4️⃣ ¿Qué *día del mes es tu fecha de corte*?');
     expect(tarjetasGuardadas.length).toBe(0);
 
-    // Paso 5: Usuario proporciona día de pago
-    const res5 = await router.procesarMensaje(usuarioActivo.numeroWhatsapp, 'el 5');
-    expect(res5).toContain('¡Tarjeta guardada con éxito!');
-    expect(res5).toContain('Diners Club Davivienda');
-    expect(res5).toContain('14.000.000');
-    expect(res5).toContain('Día de corte: *20*');
-    expect(res5).toContain('Día de pago: *5*');
+    // Paso 5: Usuario proporciona día de corte
+    const res5 = await router.procesarMensaje(usuarioActivo.numeroWhatsapp, 'los 20');
+    expect(res5).toContain('Corte el día *20*');
+    expect(res5).toContain('5️⃣ Por último, ¿qué *día del mes es tu fecha límite de pago*?');
+    expect(tarjetasGuardadas.length).toBe(0);
+
+    // Paso 6: Usuario proporciona día de pago
+    const res6 = await router.procesarMensaje(usuarioActivo.numeroWhatsapp, 'el 5');
+    expect(res6).toContain('¡Tarjeta guardada con éxito!');
+    expect(res6).toContain('Diners Club Davivienda');
+    expect(res6).toContain('Cupo total asignado:* *$14.000.000*');
+    expect(res6).toContain('Cupo disponible actual:* *$14.000.000*');
+    expect(res6).toContain('(100% libre)');
+    expect(res6).toContain('Día de corte: *20*');
+    expect(res6).toContain('Día de pago: *5*');
 
     // Ahora SÍ debe estar guardada en base de datos
     expect(tarjetasGuardadas.length).toBe(1);
@@ -210,6 +218,24 @@ describe('Flujo Conversacional Guiado: Registro de Tarjetas', () => {
     expect(tarjetasGuardadas[0]?.cupo).toBe(14000000);
     expect(tarjetasGuardadas[0]?.diaCorte).toBe(20);
     expect(tarjetasGuardadas[0]?.diaPago).toBe(5);
+  });
+
+  it('Distingue entre cupo total y disponible cuando el usuario debe una parte', async () => {
+    // Iniciar y completar hasta cupo disponible indicando que debe 4 millones
+    await router.procesarMensaje(usuarioActivo.numeroWhatsapp, 'registremos una tarjeta');
+    await router.procesarMensaje(usuarioActivo.numeroWhatsapp, 'Nu');
+    await router.procesarMensaje(usuarioActivo.numeroWhatsapp, '10 millones');
+    
+    // En el paso de disponible, indica que debe 4 millones
+    const resDisp = await router.procesarMensaje(usuarioActivo.numeroWhatsapp, 'debo 4 millones');
+    expect(resDisp).toContain('Cupo disponible anotado: *$6.000.000*');
+
+    await router.procesarMensaje(usuarioActivo.numeroWhatsapp, 'corte los 15');
+    const resFinal = await router.procesarMensaje(usuarioActivo.numeroWhatsapp, 'pago los 5');
+
+    expect(resFinal).toContain('Cupo total asignado:* *$10.000.000*');
+    expect(resFinal).toContain('Cupo disponible actual:* *$6.000.000*');
+    expect(resFinal).toContain('Saldo utilizado / por pagar:* *$4.000.000*');
   });
 
   it('Permite cancelar el flujo si el usuario escribe "cancelar"', async () => {

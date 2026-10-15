@@ -11,6 +11,7 @@ export interface DetallesTarjetaExtraidos {
   readonly nombre: string;
   readonly banco: string;
   readonly cupo: number | null;
+  readonly cupoDisponible?: number | null;
   readonly diaCorte: number | null;
   readonly diaPago: number | null;
 }
@@ -93,11 +94,26 @@ export function extraerDetallesTarjeta(texto: string): DetallesTarjetaExtraidos 
     if (val >= 1 && val <= 31) diaPago = val;
   }
 
-  // 3. Cupo
+  // 3. Cupo Total y Cupo Disponible
   let cupo: number | null = null;
-  const matchCupoFragmento = /cupo\s*(?:de)?\s*([$0-9.,'’\s]+?(?:millones?|millón|millon|mill\b|mil|m|k)?)(?:\s+(?:corte|pago|con|y|$))/i.exec(lower);
-  if (matchCupoFragmento && matchCupoFragmento[1]) {
-    cupo = extraerMontoColombiano(matchCupoFragmento[1]);
+  let cupoDisponible: number | null = null;
+
+  const matchCupoTotal = /(?:cupo\s*total|cupo\s*asignado|cupo\s*aprobado|cupo)\s*(?:de|es)?\s*([$0-9.,'’\s]+?(?:millones?|millón|millon|mill\b|mil|m|k)?)(?:\s+(?:disponible|corte|pago|con|y|$))/i.exec(lower);
+  if (matchCupoTotal && matchCupoTotal[1]) {
+    cupo = extraerMontoColombiano(matchCupoTotal[1]);
+  }
+
+  const matchDisponible = /(?:cupo\s*disponible|disponible|saldo\s*disponible|libre)\s*(?:de|es)?\s*([$0-9.,'’\s]+?(?:millones?|millón|millon|mill\b|mil|m|k)?)(?:\s+(?:corte|pago|con|y|$))/i.exec(lower);
+  if (matchDisponible && matchDisponible[1]) {
+    cupoDisponible = extraerMontoColombiano(matchDisponible[1]);
+  }
+
+  const matchDebo = /(?:debo|saldo\s*(?:utilizado|en\s*uso|actual)|deuda)\s*(?:de|es)?\s*([$0-9.,'’\s]+?(?:millones?|millón|millon|mill\b|mil|m|k)?)(?:\s+(?:corte|pago|con|y|$))/i.exec(lower);
+  if (matchDebo && matchDebo[1]) {
+    const deuda = extraerMontoColombiano(matchDebo[1]);
+    if (deuda && cupo && deuda < cupo) {
+      cupoDisponible = cupo - deuda;
+    }
   }
 
   // Si no se extrajo directamente después de "cupo", buscar el monto más significativo
@@ -183,6 +199,7 @@ export function extraerDetallesTarjeta(texto: string): DetallesTarjetaExtraidos 
     nombre,
     banco,
     cupo,
+    cupoDisponible,
     diaCorte,
     diaPago,
   };

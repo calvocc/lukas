@@ -60,7 +60,9 @@ Intenciones posibles:
 - "correccion": Corregir o cambiar cuotas de una compra (ej: "ya pasé la de amazon a 1 cuota", "cambiar a 1 cuota")
 - "eliminacion": Borrar la última transacción (ej: "borra el último", "elimina ese gasto")
 - "config_presupuesto": Establecer o modificar el tope mensual de gasto global (ej: "mi presupuesto este mes es 3 millones", "cambiar umbral a 4.5m")
-- "config_tarjeta": Cuando el usuario quiere agregar, registrar o configurar una tarjeta de crédito, ya sea iniciando el proceso o con datos completos (ej: "registremos una tarjeta", "agregar tarjeta", "registrar tarjeta diners davivienda cupo de 14.000.000 corte los 20 pago los 5")
+- "config_tarjeta": Cuando el usuario quiere agregar, registrar o configurar una tarjeta de crédito, ya sea iniciando el proceso o con datos completos (ej: "registremos una tarjeta", "agregar tarjeta", "registrar tarjeta diners davivienda cupo de 14.000.000 corte los 20 pago los 5"). Distingue entre:
+    * "cupo": cupo total asignado/aprobado por el banco.
+    * "cupoDisponible": cupo libre para gastar hoy. Si dice cuánto debe, cupoDisponible = cupo - deuda. Si no especifica deuda, puede ser igual a cupo o null.
 - "ayuda": Preguntas sobre qué puede hacer Lukas (ej: "ayuda", "qué puedes hacer")
 - "no_entendido": Todo lo demás
 
@@ -101,6 +103,7 @@ Estructura JSON requerida:
     "nombre": string | null,
     "banco": string | null,
     "cupo": number | null,
+    "cupoDisponible": number | null,
     "diaCorte": number | null,
     "diaPago": number | null
   },

@@ -22,10 +22,11 @@ import { extraerDetallesTarjeta, extraerMontoColombiano } from '../parser/parser
 export interface RegistroTarjetaPendiente {
   nombre: string | null;
   banco: string | null;
-  cupo: number | null;
+  cupo: number | null; // Cupo total asignado por el banco
+  cupoDisponible: number | null; // Cupo disponible actualmente para compras
   diaCorte: number | null;
   diaPago: number | null;
-  pasoEsperado?: 'nombre' | 'cupo' | 'corte' | 'pago';
+  pasoEsperado?: 'nombre' | 'cupo' | 'disponible' | 'corte' | 'pago';
   actualizadoEn: number;
 }
 
@@ -227,23 +228,34 @@ export class CanalRouterService {
 
         // Si la información está 100% COMPLETA en el mensaje, se registra directamente
         if (tieneNombre && tieneCupo && tieneCorte && tienePago && detalles.nombre && detalles.cupo && detalles.diaCorte && detalles.diaPago) {
+          const cupoTotal = detalles.cupo;
+          const cupoDisponible = detalles.cupoDisponible ?? detalles.cupo;
+
           const nueva = await this.tarjetasService.crear(usuario.id, {
             nombre: detalles.nombre,
             banco: detalles.banco && detalles.banco !== 'Banco' ? detalles.banco : detalles.nombre,
             diaCorte: detalles.diaCorte,
             diaPago: detalles.diaPago,
-            cupo: detalles.cupo,
-            cupoDisponible: detalles.cupo,
+            cupo: cupoTotal,
+            cupoDisponible: cupoDisponible,
             aceptaCompras: true,
             cobraInteresUnaCuota: false,
           });
 
+          const saldoEnUso = Math.max(0, cupoTotal - cupoDisponible);
+          let balanceTexto = `• 💰 *Cupo total asignado:* *${formatearMoneda(cupoTotal)}*\n• 🟢 *Cupo disponible actual:* *${formatearMoneda(cupoDisponible)}*`;
+          if (saldoEnUso > 0) {
+            balanceTexto += `\n• 🔴 *Saldo utilizado / por pagar:* *${formatearMoneda(saldoEnUso)}*`;
+          } else {
+            balanceTexto += ` _(100% libre)_`;
+          }
+
           return `💳 *¡Tarjeta guardada con éxito!*
 
 • Tarjeta: *${nueva.nombre}* (${nueva.banco})
-• Cupo disponible: *${formatearMoneda(nueva.cupo ?? 0)}*
-• Día de corte: *${nueva.diaCorte}*
-• Día de pago: *${nueva.diaPago}*
+${balanceTexto}
+• ✂️ Día de corte: *${nueva.diaCorte}* de cada mes
+• 📅 Día de pago: *${nueva.diaPago}* de cada mes
 
 💡 A partir de ahora, cuando vayas a comprar algo, pregúntame:
 _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para ganar hasta 50 días libres de interés.`;
@@ -254,6 +266,7 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
           nombre: tieneNombre ? detalles.nombre : null,
           banco: tieneNombre ? detalles.banco : null,
           cupo: tieneCupo ? detalles.cupo : null,
+          cupoDisponible: detalles.cupoDisponible ?? null,
           diaCorte: tieneCorte ? detalles.diaCorte : null,
           diaPago: tienePago ? detalles.diaPago : null,
           actualizadoEn: Date.now(),
@@ -470,15 +483,24 @@ Prueba diciendo algo como:
       sesion.pasoEsperado = 'cupo';
       return `Genial, *${sesion.nombre}* 🏦
 
-2️⃣ ¿Cuál es tu *cupo total asignado*?
+2️⃣ ¿Cuál es tu *cupo total aprobado por el banco*?
 (Ej: _$14.000.000_ o _5 millones_)`;
+    }
+
+    if (sesion.cupoDisponible === null || sesion.cupoDisponible === undefined || sesion.cupoDisponible < 0) {
+      sesion.pasoEsperado = 'disponible';
+      return `Anotado: Cupo total de *${formatearMoneda(sesion.cupo)}* 💰
+
+3️⃣ ¿Cuánto tienes de *cupo disponible para compras hoy*?
+• Si no has gastado nada o la tienes al 100% libre, escribe: _"todo"_
+• O escribe cuánto te queda libre (ej: _$10.000.000_) o cuánto debes (ej: _"debo 4 millones"_)`;
     }
 
     if (!sesion.diaCorte || sesion.diaCorte < 1 || sesion.diaCorte > 31) {
       sesion.pasoEsperado = 'corte';
-      return `Anotado: cupo de *${formatearMoneda(sesion.cupo)}* 💰
+      return `Cupo disponible anotado: *${formatearMoneda(sesion.cupoDisponible)}* 🟢
 
-3️⃣ ¿Qué *día del mes es tu fecha de corte*?
+4️⃣ ¿Qué *día del mes es tu fecha de corte*?
 (Escribe solo el número del día, ej: _20_)`;
     }
 
@@ -486,7 +508,7 @@ Prueba diciendo algo como:
       sesion.pasoEsperado = 'pago';
       return `Corte el día *${sesion.diaCorte}* ✂️
 
-4️⃣ Por último, ¿qué *día del mes es tu fecha límite de pago*?
+5️⃣ Por último, ¿qué *día del mes es tu fecha límite de pago*?
 (Escribe solo el número del día, ej: _5_)`;
     }
 
@@ -512,7 +534,7 @@ Prueba diciendo algo como:
       }
     }
 
-    // 2. Cupo
+    // 2. Cupo Total
     const lower = texto.toLowerCase().trim();
     if (detalles.cupo && detalles.cupo >= 10000 && (lower.includes('cupo') || sesion.pasoEsperado === 'cupo')) {
       sesion.cupo = detalles.cupo;
@@ -523,7 +545,33 @@ Prueba diciendo algo como:
       }
     }
 
-    // 3. Día de Corte
+    // 3. Cupo Disponible Actual
+    if (detalles.cupoDisponible !== null && detalles.cupoDisponible !== undefined) {
+      sesion.cupoDisponible = detalles.cupoDisponible;
+    } else if (sesion.pasoEsperado === 'disponible') {
+      if (
+        lower === 'todo' ||
+        lower.includes('completo') ||
+        lower.includes('libre') ||
+        lower.includes('los mismos') ||
+        lower.includes('igual') ||
+        lower.includes('nada')
+      ) {
+        sesion.cupoDisponible = sesion.cupo;
+      } else if (lower.includes('debo') || lower.includes('deuda')) {
+        const deuda = extraerMontoColombiano(lower);
+        if (deuda && sesion.cupo) {
+          sesion.cupoDisponible = Math.max(0, sesion.cupo - deuda);
+        }
+      } else {
+        const monto = extraerMontoColombiano(lower);
+        if (monto && monto >= 0) {
+          sesion.cupoDisponible = sesion.cupo ? Math.min(monto, sesion.cupo) : monto;
+        }
+      }
+    }
+
+    // 4. Día de Corte
     if (detalles.diaCorte && detalles.diaCorte >= 1 && detalles.diaCorte <= 31) {
       sesion.diaCorte = detalles.diaCorte;
     } else if ((!sesion.diaCorte || sesion.diaCorte < 1) && sesion.pasoEsperado === 'corte') {
@@ -533,7 +581,7 @@ Prueba diciendo algo como:
       }
     }
 
-    // 4. Día de Pago
+    // 5. Día de Pago
     if (detalles.diaPago && detalles.diaPago >= 1 && detalles.diaPago <= 31) {
       sesion.diaPago = detalles.diaPago;
     } else if ((!sesion.diaPago || sesion.diaPago < 1) && sesion.pasoEsperado === 'pago') {
@@ -545,11 +593,13 @@ Prueba diciendo algo como:
 
     sesion.actualizadoEn = Date.now();
 
-    // Validar si ya se completaron los 4 datos requeridos
+    // Validar si ya se completaron los 5 datos requeridos (o 4 si disponible es igual a total)
     if (
       sesion.nombre &&
       sesion.cupo &&
       sesion.cupo > 0 &&
+      sesion.cupoDisponible !== null &&
+      sesion.cupoDisponible !== undefined &&
       sesion.diaCorte &&
       sesion.diaCorte >= 1 &&
       sesion.diaCorte <= 31 &&
@@ -557,25 +607,36 @@ Prueba diciendo algo como:
       sesion.diaPago >= 1 &&
       sesion.diaPago <= 31
     ) {
+      const cupoTotal = sesion.cupo;
+      const cupoDisponible = sesion.cupoDisponible;
+
       const nueva = await this.tarjetasService.crear(usuarioId, {
         nombre: sesion.nombre,
         banco: sesion.banco && sesion.banco !== 'Banco' ? sesion.banco : sesion.nombre,
         diaCorte: sesion.diaCorte,
         diaPago: sesion.diaPago,
-        cupo: sesion.cupo,
-        cupoDisponible: sesion.cupo,
+        cupo: cupoTotal,
+        cupoDisponible: cupoDisponible,
         aceptaCompras: true,
         cobraInteresUnaCuota: false,
       });
 
       this.sesionesRegistroTarjetas.delete(usuarioId);
 
+      const saldoEnUso = Math.max(0, cupoTotal - cupoDisponible);
+      let balanceTexto = `• 💰 *Cupo total asignado:* *${formatearMoneda(cupoTotal)}*\n• 🟢 *Cupo disponible actual:* *${formatearMoneda(cupoDisponible)}*`;
+      if (saldoEnUso > 0) {
+        balanceTexto += `\n• 🔴 *Saldo utilizado / por pagar:* *${formatearMoneda(saldoEnUso)}*`;
+      } else {
+        balanceTexto += ` _(100% libre)_`;
+      }
+
       return `💳 *¡Tarjeta guardada con éxito!*
 
 • Tarjeta: *${nueva.nombre}* (${nueva.banco})
-• Cupo disponible: *${formatearMoneda(nueva.cupo ?? 0)}*
-• Día de corte: *${nueva.diaCorte}*
-• Día de pago: *${nueva.diaPago}*
+${balanceTexto}
+• ✂️ Día de corte: *${nueva.diaCorte}* de cada mes
+• 📅 Día de pago: *${nueva.diaPago}* de cada mes
 
 💡 A partir de ahora, cuando vayas a comprar algo, pregúntame:
 _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para ganar hasta 50 días libres de interés.`;

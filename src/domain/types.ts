@@ -152,6 +152,7 @@ export interface ConfigTarjetaExtraida {
   readonly nombre: string | null;
   readonly banco: string | null;
   readonly cupo: number | null;
+  readonly cupoDisponible?: number | null;
   readonly diaCorte: number | null;
   readonly diaPago: number | null;
 }
