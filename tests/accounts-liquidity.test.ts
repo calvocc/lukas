@@ -324,5 +324,18 @@ describe('Gestión de Cuentas de Liquidez (Débito, Billeteras, Efectivo)', () =
       expect(res).toContain('*Deuda total en tarjetas:* *$800.000*');
       expect(res).toContain('*Balance Neto (Dinero propio - Deuda actual):* 🟢 *$1.650.000*');
     });
+
+    it('debe mostrar el comando de ayuda con las nuevas capacidades (tarjetas, liquidez, balance, compras)', async () => {
+      const res = await router.procesarMensaje('+573112223344', 'ayuda');
+      expect(res).toContain('¿Qué puede hacer Lukas por ti?');
+      expect(res).toContain('Tarjetas de Crédito (El Método Lukas)');
+      expect(res).toContain('Registremos una tarjeta');
+      expect(res).toContain('Lo compré');
+      expect(res).toContain('Dinero Propio y Liquidez (Débito, Billeteras y Efectivo)');
+      expect(res).toContain('Nequi');
+      expect(res).toContain('Consultas Inteligentes y Balance');
+      expect(res).toContain('Mis tarjetas');
+      expect(res).toContain('¿Cuánta plata tengo?');
+    });
   });
 });

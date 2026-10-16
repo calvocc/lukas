@@ -76,26 +76,30 @@ _"Registrar tarjeta Nu cupo 3 millones corte 15 pago 5"_
   mensajeAyuda(): string {
     return `🤖 *¿Qué puede hacer Lukas por ti?*
 
-1. 📝 *Lukas anota:*
-   • _"45000 almuerzo en efectivo"_
-   • _"120000 supermercado bancolombia a 1 cuota"_
-   • _"Me pagaron 3500000"_
-   • _"Borra el último"_ (deshace el último registro)
+1. 💳 *Tarjetas de Crédito (El Método Lukas):*
+   • _"Registremos una tarjeta"_ (te guío paso a paso para configurar cupo total, disponible, tasa y corte/pago).
+   • _"¿Qué tarjeta uso hoy para 500 mil?"_ o _"Quiero comprar un tv de 1.200.000 a 2 cuotas"_ (te dice cuál da más días libres de interés o menor tasa).
+   • _"Lo compré"_ o _"Lo compré con la master"_ (anota la compra recomendada y descuenta el cupo automáticamente).
+   • _"Ya pasé a 1 cuota"_ (hackea el 0% de interés y desactiva alertas).
+   • _"Ya pagué nu"_ (restablece tu cupo al 100%).
 
-2. 💳 *El Método Lukas (Hackea tus tarjetas):*
-   • _"¿Qué tarjeta uso hoy para 800 mil?"_ (te dice cuál da más días gratis)
-   • _"Ya pagué la gold"_ (marca pagado y libera cupo)
-   • _"Ya pasé la de amazon a 1 cuota"_ (cancela alerta de intereses)
+2. 🟢 *Dinero Propio y Liquidez (Débito, Billeteras y Efectivo):*
+   • _"Registrar débito Bancolombia saldo 2 millones"_
+   • _"Tengo 500 mil en Nequi"_ o _"Tengo 150 mil en efectivo"_
+   • _"45000 almuerzo débito bancolombia"_ (descuenta tu saldo al instante).
+   • _"Ingreso 500000 en Nequi"_ o _"Me pagaron 3 millones"_ (abona a tu cuenta).
 
-3. 📋 *Lukas lleva tus cuentas:*
-   • _"Pagué la cuota del kona"_ o _"Pagué el arriendo"_
-   • _"¿Cuánto debo en total?"_
+3. 📊 *Consultas Inteligentes y Balance:*
+   • _"Mis tarjetas"_ (detalle de cupos, saldo en uso, tasas y cortes).
+   • _"Saldo"_ o _"¿Cuánta plata tengo?"_ (tu liquidez propia, deuda en tarjetas y balance neto).
+   • _"¿Cuándo corta la diners?"_ (días de corte, pago y ventana óptima de financiamiento).
+   • _"¿Cuánto he gastado en comida?"_ o _"Gastos de esta semana"_.
 
-4. 🛡️ *Umbral de gasto:*
-   • _"Mi presupuesto este mes es 3 millones"_
-
-5. 📊 *Lukas te muestra:*
-   • _"¿Cómo voy este mes?"_ o _"Balance"_`;
+4. 📝 *Control Diario y Presupuesto:*
+   • _"85.000 mercado en efectivo"_
+   • _"Mi presupuesto este mes es 3 millones"_ (alertas al 80% y 100%).
+   • _"Borra el último"_ (deshace el último registro por error).
+   • _"Pagué la cuota del carro"_ o _"¿Cuánto debo en total?"_`;
   }
 
   mensajeRecomendacionTarjeta(

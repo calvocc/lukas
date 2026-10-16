@@ -579,9 +579,11 @@ Escríbeme por ejemplo: _"1.200.000 tv diners 2 cuotas"_ o _"85000 mercado efect
 
         return `🤔 No logré entender bien ese mensaje.
 Prueba diciendo algo como:
-• _"85000 mercado gold"_
+• _"85.000 mercado efectivo"_
 • _"¿Qué tarjeta uso hoy para 500 mil?"_
-• _"Ya pagué la gold"_
+• _"Tengo 500 mil en Nequi"_
+• _"Registremos una tarjeta"_
+• _"Saldo"_ o _"Mis tarjetas"_
 • _"Ayuda"_ para ver todo lo que puedo hacer.`;
       }
     }
