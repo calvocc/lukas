@@ -137,8 +137,7 @@ describe('Seguimiento Contextual de Compras ("lo compré")', () => {
       metaExoneracion: 0,
       tasaInteresEa: 28.5,
       activa: true,
-      creadaEn: new Date(),
-      actualizadaEn: new Date(),
+      creadoEn: new Date(),
     };
 
     beforeEach(() => {
@@ -158,6 +157,8 @@ describe('Seguimiento Contextual de Compras ("lo compré")', () => {
       const movimientosServiceMock: Partial<MovimientosService> = {
         obtenerUltimaTransaccion: vi.fn().mockResolvedValue(null),
         calcularGastoMesActual: vi.fn().mockResolvedValue(1200000),
+        calcularGastoPeriodo: vi.fn().mockResolvedValue(1200000),
+        listarTransaccionesPeriodo: vi.fn().mockResolvedValue([]),
         registrar: vi.fn().mockImplementation((_uid: string, datos: { monto: number; descripcion: string | null; cuotas: number; tarjetaId: string | null }) => {
           movimientosRegistrados.push(datos);
           const t: Transaccion = {
@@ -165,19 +166,15 @@ describe('Seguimiento Contextual de Compras ("lo compré")', () => {
             usuarioId: 'usr-1',
             tipo: 'gasto',
             monto: datos.monto,
-            montoConfianza: 'alta',
-            categoriaId: null,
-            categoriaNombre: 'Otros',
+            categoriaId: 'cat-1',
             categoriaConfianza: 'alta',
             descripcion: datos.descripcion,
             medioPago: 'tarjeta',
             tarjetaId: datos.tarjetaId,
-            obligacionId: null,
             cuotas: datos.cuotas,
-            cuotasManejadasEnApp: false,
-            canal: 'whatsapp',
-            procesadoPorIa: true,
-            fecha: new Date(),
+            cuotasOriginales: datos.cuotas,
+            pendienteRediferir: datos.cuotas > 1,
+            fecha: '2026-10-15',
             creadoEn: new Date(),
           };
           return Promise.resolve(t);
@@ -202,7 +199,8 @@ describe('Seguimiento Contextual de Compras ("lo compré")', () => {
             esVentanaOptima: false,
             mensajeEstrategico: 'Corte próximo en 5 días. Tendrás 22 días para pagar.',
             cumpleMonto: true,
-          } as RecomendacionTarjeta,
+            requiereAtencionCuotaManejo: false,
+          },
         ]),
       };
 

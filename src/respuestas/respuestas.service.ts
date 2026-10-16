@@ -317,7 +317,13 @@ o simplemente diciendo: _"registremos una tarjeta"_ y te pediré los datos paso 
     return texto;
   }
 
-  mensajeGastoPeriodo(periodo: string, gasto: number, limitePresupuesto?: number | null): string {
+  mensajeGastoPeriodo(
+    periodo: string,
+    gasto: number,
+    limitePresupuesto?: number | null,
+    transacciones?: readonly Transaccion[],
+    tarjetas?: readonly Tarjeta[],
+  ): string {
     const periodoLabel =
       periodo === 'hoy'
         ? 'hoy'
@@ -334,6 +340,21 @@ o simplemente diciendo: _"registremos una tarjeta"_ y te pediré los datos paso 
       const restante = Math.max(0, limitePresupuesto - gasto);
       texto += `\n• Presupuesto mensual: *${formatearMoneda(limitePresupuesto)}* (${pct}% consumido)`;
       texto += `\n• Margen restante: *${formatearMoneda(restante)}*`;
+    }
+
+    if (transacciones && transacciones.length > 0) {
+      texto += `\n\n📝 *Detalle de compras (${transacciones.length}):*`;
+      for (const t of transacciones) {
+        const desc = t.descripcion ? t.descripcion : 'Gasto';
+        let medio = '';
+        if (t.medioPago === 'tarjeta' && t.tarjetaId && tarjetas) {
+          const tar = tarjetas.find((x) => x.id === t.tarjetaId);
+          medio = tar ? ` (${tar.nombre})` : ' (tarjeta)';
+        } else if (t.medioPago) {
+          medio = ` (${t.medioPago})`;
+        }
+        texto += `\n• ${desc}: *${formatearMoneda(t.monto)}*${medio}`;
+      }
     }
 
     return texto;

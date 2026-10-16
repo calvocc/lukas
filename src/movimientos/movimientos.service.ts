@@ -302,6 +302,44 @@ export class MovimientosService {
   }
 
   /**
+   * Lista las transacciones de gasto de un período ('hoy', 'semana', 'mes', 'mes_pasado')
+   */
+  async listarTransaccionesPeriodo(
+    usuarioId: string,
+    periodo: 'hoy' | 'semana' | 'mes' | 'mes_pasado',
+    limite = 10,
+  ): Promise<readonly Transaccion[]> {
+    const ahora = new Date();
+    let fechaInicio: string;
+
+    if (periodo === 'hoy') {
+      fechaInicio = ahora.toISOString().split('T')[0] ?? '';
+    } else if (periodo === 'semana') {
+      const diaSemana = ahora.getDay() || 7;
+      const lunes = new Date(ahora);
+      lunes.setDate(ahora.getDate() - diaSemana + 1);
+      fechaInicio = lunes.toISOString().split('T')[0] ?? '';
+    } else if (periodo === 'mes_pasado') {
+      const mesPasado = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+      fechaInicio = mesPasado.toISOString().split('T')[0] ?? '';
+      const finMesPasado = new Date(ahora.getFullYear(), ahora.getMonth(), 0).toISOString().split('T')[0] ?? '';
+      const rows = await this.db.query<TransaccionRow>(
+        `SELECT * FROM transacciones WHERE usuario_id = $1 AND tipo = 'gasto' AND fecha >= $2 AND fecha <= $3 ORDER BY creado_en DESC LIMIT $4`,
+        [usuarioId, fechaInicio, finMesPasado, limite],
+      );
+      return rows.map(mapearTransaccion);
+    } else {
+      fechaInicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString().split('T')[0] ?? '';
+    }
+
+    const rows = await this.db.query<TransaccionRow>(
+      `SELECT * FROM transacciones WHERE usuario_id = $1 AND tipo = 'gasto' AND fecha >= $2 ORDER BY creado_en DESC LIMIT $3`,
+      [usuarioId, fechaInicio, limite],
+    );
+    return rows.map(mapearTransaccion);
+  }
+
+  /**
    * Calcula el gasto acumulado en el mes para una categoría específica
    */
   async calcularGastoPorCategoria(

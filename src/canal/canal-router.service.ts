@@ -413,10 +413,13 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
           case 'total_periodo': {
             const periodo = parsed.consulta?.periodo ?? 'mes';
             const gastoPeriodo = await this.movimientosService.calcularGastoPeriodo(usuario.id, periodo);
+            const transaccionesPeriodo = await this.movimientosService.listarTransaccionesPeriodo(usuario.id, periodo, 10);
             return this.respuestasService.mensajeGastoPeriodo(
               periodo,
               gastoPeriodo,
               usuario.limiteGastoMensual,
+              transaccionesPeriodo,
+              tarjetasActualizadas,
             );
           }
 
