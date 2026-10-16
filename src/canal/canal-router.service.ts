@@ -13,12 +13,17 @@ import { RespuestasService } from '../respuestas/respuestas.service';
 import { MovimientosService } from '../movimientos/movimientos.service';
 import { TarjetasService } from '../tarjetas/tarjetas.service';
 import { CuentasService } from '../cuentas/cuentas.service';
-import { ObligacionesService } from '../obligaciones/obligaciones.service';
+import { ObligacionesService, generarConsejoAceleracionDeuda } from '../obligaciones/obligaciones.service';
 import { DatabaseService } from '../database/database.service';
 import { ContextoMensaje } from '../parser/parser.interface';
-import { Tarjeta, RecomendacionCompraPendiente, Cuenta } from '../domain/types';
+import { Tarjeta, RecomendacionCompraPendiente, Cuenta, TipoObligacion } from '../domain/types';
 import { formatearMoneda } from '../respuestas/formateador';
-import { extraerDetallesTarjeta, extraerDetallesCuenta, extraerMontoColombiano } from '../parser/parser.utils';
+import {
+  extraerDetallesTarjeta,
+  extraerDetallesCuenta,
+  extraerDetallesObligacion,
+  extraerMontoColombiano,
+} from '../parser/parser.utils';
 
 export interface RegistroTarjetaPendiente {
   nombre: string | null;
@@ -32,6 +37,20 @@ export interface RegistroTarjetaPendiente {
   actualizadoEn: number;
 }
 
+export interface RegistroObligacionPendiente {
+  nombre: string | null;
+  tipo: TipoObligacion;
+  entidad: string | null;
+  saldo: number | null;
+  tasaEa: number | null;
+  tasaMv: number | null;
+  cuota: number | null;
+  cuotasRestantes: number | null;
+  diaPago: number | null;
+  pasoEsperado?: 'nombre' | 'saldo' | 'cuotas' | 'tasa' | 'diaPago' | 'cuota';
+  actualizadoEn: number;
+}
+
 @Injectable()
 export class CanalRouterService {
   private readonly logger = new Logger(CanalRouterService.name);
@@ -40,6 +59,8 @@ export class CanalRouterService {
   private readonly MAX_MENSAJES_POR_MINUTO = 15;
   // Flujo conversacional guiado para registro de tarjetas paso a paso
   private readonly sesionesRegistroTarjetas = new Map<string, RegistroTarjetaPendiente>();
+  // Flujo conversacional guiado para registro de deudas y créditos
+  private readonly sesionesRegistroObligaciones = new Map<string, RegistroObligacionPendiente>();
   // Recomendaciones de compra pendientes para seguimiento contextual ("lo compré")
   private readonly recomendacionesPendientes = new Map<string, RecomendacionCompraPendiente>();
 
@@ -123,6 +144,18 @@ export class CanalRouterService {
       }
 
       return await this.continuarRegistroTarjeta(usuario.id, texto, sesionRegistro);
+    }
+
+    // 2.6. Si el usuario está en medio de un flujo guiado para registrar crédito/deuda
+    const sesionObligacion = this.sesionesRegistroObligaciones.get(usuario.id);
+    if (sesionObligacion) {
+      const lower = texto.toLowerCase().trim();
+      if (lower === 'cancelar' || lower.includes('cancelar') || lower === 'ya no' || lower === 'salir') {
+        this.sesionesRegistroObligaciones.delete(usuario.id);
+        return '❌ Cancelé el registro del crédito. Puedes registrarlo en cualquier momento diciendo: _"registrar crédito"_.';
+      }
+
+      return await this.continuarRegistroObligacion(usuario.id, texto, sesionObligacion);
     }
 
     // 3. Usuario activo: Preparar contexto para el Intérprete
@@ -311,6 +344,56 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
         return this.respuestasService.mensajeCuentaGuardada(cuentaGuardada);
       }
 
+      case 'config_obligacion': {
+        const detalles = parsed.configObligacion ?? extraerDetallesObligacion(texto);
+        const tieneNombre = Boolean(detalles.nombre && detalles.nombre !== 'Crédito');
+        const tieneSaldo = Boolean(detalles.saldo && detalles.saldo > 0);
+        const tienePago = Boolean(detalles.diaPago && detalles.diaPago >= 1 && detalles.diaPago <= 31);
+        const tieneCuotas = Boolean(detalles.cuotasRestantes && detalles.cuotasRestantes > 0);
+
+        // Si la información esencial está COMPLETA en el mensaje, se registra directamente
+        if (tieneNombre && tieneSaldo && tienePago && tieneCuotas && detalles.diaPago && detalles.saldo && detalles.cuotasRestantes) {
+          const obligacionGuardada = await this.obligacionesService.crear(usuario.id, {
+            nombre: detalles.nombre ?? 'Crédito',
+            tipo: detalles.tipo ?? 'deuda',
+            entidad: detalles.entidad ?? null,
+            saldo: detalles.saldo,
+            tasaEa: detalles.tasaEa ?? null,
+            tasaMv: detalles.tasaMv ?? null,
+            cuota: detalles.cuota ?? null,
+            cuotasRestantes: detalles.cuotasRestantes,
+            cuotasTotales: detalles.cuotasTotales ?? detalles.cuotasRestantes,
+            diaPago: detalles.diaPago,
+          });
+
+          const consejo = generarConsejoAceleracionDeuda(
+            obligacionGuardada.saldo ?? 0,
+            obligacionGuardada.tasaEa ?? null,
+            obligacionGuardada.cuotasRestantes ?? 12,
+            obligacionGuardada.cuota,
+          );
+
+          this.sesionesRegistroObligaciones.delete(usuario.id);
+          return this.respuestasService.mensajeObligacionGuardada(obligacionGuardada, consejo);
+        }
+
+        // Si la información está incompleta, iniciar flujo conversacional guiado
+        const sesion: RegistroObligacionPendiente = {
+          nombre: tieneNombre && detalles.nombre ? detalles.nombre : null,
+          tipo: detalles.tipo ?? 'deuda',
+          entidad: detalles.entidad ?? null,
+          saldo: tieneSaldo && detalles.saldo ? detalles.saldo : null,
+          tasaEa: detalles.tasaEa ?? null,
+          tasaMv: detalles.tasaMv ?? null,
+          cuota: detalles.cuota ?? null,
+          cuotasRestantes: tieneCuotas && detalles.cuotasRestantes ? detalles.cuotasRestantes : null,
+          diaPago: tienePago && detalles.diaPago ? detalles.diaPago : null,
+          actualizadoEn: Date.now(),
+        };
+        this.sesionesRegistroObligaciones.set(usuario.id, sesion);
+        return this.pedirSiguienteDatoObligacion(sesion);
+      }
+
       case 'consulta': {
         let tipoConsulta = parsed.consulta?.tipoConsulta ?? 'resumen';
         const lowerLimpio = texto.toLowerCase().replace(/[/\\?¿!¡.,;:]/g, ' ');
@@ -368,6 +451,22 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
         ) {
           if (tipoConsulta !== 'tarjetas' && tipoConsulta !== 'mejor_tarjeta') {
             tipoConsulta = 'ciclo_tarjeta';
+          }
+        }
+
+        // Protección determinista para 'deudas' si el usuario pregunta por sus deudas, créditos u obligaciones
+        if (
+          lowerLimpio.includes('deudas') ||
+          lowerLimpio.includes('créditos') ||
+          lowerLimpio.includes('creditos') ||
+          lowerLimpio.includes('obligaciones') ||
+          lowerLimpio.includes('mis prestamos') ||
+          lowerLimpio.includes('mis préstamos') ||
+          lowerLimpio.includes('cuanto debo') ||
+          lowerLimpio.includes('cuánto debo')
+        ) {
+          if (!lowerLimpio.includes('uso hoy') && !lowerLimpio.includes('mejor tarjeta')) {
+            tipoConsulta = 'deudas';
           }
         }
 
@@ -806,5 +905,168 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
     }
 
     return this.pedirSiguienteDatoTarjeta(sesion);
+  }
+
+  private pedirSiguienteDatoObligacion(sesion: RegistroObligacionPendiente): string {
+    if (!sesion.nombre || sesion.nombre === 'Crédito') {
+      sesion.pasoEsperado = 'nombre';
+      return `🏦 ¡Perfecto! Vamos a registrar tu crédito u obligación para recordarte los pagos oportunos y darte estrategias de ahorro e intereses 💡
+
+1️⃣ ¿Cuál es el *tipo o nombre del crédito y entidad*?
+(Ej: _Crédito de Vehículo Sufi_, _Hipotecario Davivienda_, _Libre Inversión Bancolombia_)`;
+    }
+
+    if (!sesion.saldo || sesion.saldo <= 0) {
+      sesion.pasoEsperado = 'saldo';
+      return `Excelente, *${sesion.nombre}* 📄
+
+2️⃣ ¿Cuál es el *saldo pendiente o monto total del crédito*?
+(Ej: _$80.000.000_ o _45 millones_)`;
+    }
+
+    if (!sesion.cuotasRestantes || sesion.cuotasRestantes <= 0) {
+      sesion.pasoEsperado = 'cuotas';
+      return `Saldo anotado: *${formatearMoneda(sesion.saldo)}* 💰
+
+3️⃣ ¿A cuántos *meses o cuotas pendientes* está el crédito?
+(Ej: _46 meses_, _24 cuotas_)`;
+    }
+
+    if (sesion.tasaEa === null || sesion.tasaEa === undefined) {
+      sesion.pasoEsperado = 'tasa';
+      return `Plazo registrado: *${sesion.cuotasRestantes} meses* ⏳
+
+4️⃣ ¿Cuál es la *tasa de interés del crédito*?
+(Ej: _11% EA_, _1.2% mensual_, o escribe _"omitir"_ si no la recuerdas)`;
+    }
+
+    if (!sesion.diaPago || sesion.diaPago < 1 || sesion.diaPago > 31) {
+      sesion.pasoEsperado = 'diaPago';
+      const tasaStr = sesion.tasaEa ? `Tasa registrada: *${sesion.tasaEa}% E.A.* 📈\n\n` : '';
+      return `${tasaStr}5️⃣ Por último, ¿qué *día del mes es tu fecha de pago oportuno*?
+(Escribe solo el número del día, ej: _2_)`;
+    }
+
+    return '';
+  }
+
+  private async continuarRegistroObligacion(
+    usuarioId: string,
+    texto: string,
+    sesion: RegistroObligacionPendiente,
+  ): Promise<string> {
+    const detalles = extraerDetallesObligacion(texto);
+    const lower = texto.toLowerCase().trim();
+
+    // 1. Nombre y Entidad
+    if (detalles.nombre && detalles.nombre !== 'Crédito') {
+      sesion.nombre = detalles.nombre;
+      if (detalles.entidad) sesion.entidad = detalles.entidad;
+    } else if ((!sesion.nombre || sesion.nombre === 'Crédito') && sesion.pasoEsperado === 'nombre') {
+      const nombreLimpio = texto.trim().replace(/^(es|mi crédito es|crédito|deuda|préstamo)\s+/i, '');
+      if (nombreLimpio.length >= 2 && !/^\d+$/.test(nombreLimpio)) {
+        sesion.nombre = nombreLimpio;
+      }
+    }
+
+    // 2. Saldo / Monto total
+    if (detalles.saldo && detalles.saldo > 0) {
+      sesion.saldo = detalles.saldo;
+    } else if ((!sesion.saldo || sesion.saldo <= 0) && sesion.pasoEsperado === 'saldo') {
+      const monto = extraerMontoColombiano(texto);
+      if (monto && monto > 0) {
+        sesion.saldo = monto;
+      }
+    }
+
+    // 3. Cuotas / Plazo
+    if (detalles.cuotasRestantes && detalles.cuotasRestantes > 0) {
+      sesion.cuotasRestantes = detalles.cuotasRestantes;
+    } else if ((!sesion.cuotasRestantes || sesion.cuotasRestantes <= 0) && sesion.pasoEsperado === 'cuotas') {
+      const matchNum = lower.match(/\b(\d{1,3})\b/);
+      if (matchNum && matchNum[1]) {
+        sesion.cuotasRestantes = Number(matchNum[1]);
+      }
+    }
+
+    // 4. Tasa de interés
+    if (detalles.tasaEa !== null && detalles.tasaEa !== undefined) {
+      sesion.tasaEa = detalles.tasaEa;
+      sesion.tasaMv = detalles.tasaMv ?? null;
+    } else if (sesion.pasoEsperado === 'tasa') {
+      if (
+        lower.includes('omitir') ||
+        lower.includes('no se') ||
+        lower.includes('no sé') ||
+        lower.includes('despues') ||
+        lower.includes('paso')
+      ) {
+        sesion.tasaEa = null;
+      } else {
+        const matchNum = lower.match(/(\d{1,2}(?:[.,]\d{1,2})?)/);
+        if (matchNum && matchNum[1]) {
+          const val = Number(matchNum[1].replace(',', '.'));
+          if (val <= 5 || lower.includes('mensual') || lower.includes('mv')) {
+            const ea = (Math.pow(1 + val / 100, 12) - 1) * 100;
+            sesion.tasaEa = Math.round(ea * 10) / 10;
+            sesion.tasaMv = val;
+          } else {
+            sesion.tasaEa = val;
+            sesion.tasaMv = Math.round(((Math.pow(1 + val / 100, 1 / 12) - 1) * 100) * 100) / 100;
+          }
+        }
+      }
+    }
+
+    // 5. Día de Pago Oportuno
+    if (detalles.diaPago && detalles.diaPago >= 1 && detalles.diaPago <= 31) {
+      sesion.diaPago = detalles.diaPago;
+    } else if ((!sesion.diaPago || sesion.diaPago < 1) && sesion.pasoEsperado === 'diaPago') {
+      const numMatch = texto.match(/\b([1-9]|[12]\d|3[01])\b/);
+      if (numMatch && numMatch[1]) {
+        sesion.diaPago = Number(numMatch[1]);
+      }
+    }
+
+    sesion.actualizadoEn = Date.now();
+
+    // Validar si ya se completaron los datos mínimos para registrar la obligación
+    if (
+      sesion.nombre &&
+      sesion.nombre !== 'Crédito' &&
+      sesion.saldo &&
+      sesion.saldo > 0 &&
+      sesion.cuotasRestantes &&
+      sesion.cuotasRestantes > 0 &&
+      sesion.diaPago &&
+      sesion.diaPago >= 1 &&
+      sesion.diaPago <= 31
+    ) {
+      const obligacion = await this.obligacionesService.crear(usuarioId, {
+        nombre: sesion.nombre,
+        tipo: sesion.tipo ?? 'deuda',
+        entidad: sesion.entidad ?? null,
+        saldo: sesion.saldo,
+        tasaEa: sesion.tasaEa ?? null,
+        tasaMv: sesion.tasaMv ?? null,
+        cuota: sesion.cuota ?? null,
+        cuotasRestantes: sesion.cuotasRestantes,
+        cuotasTotales: sesion.cuotasRestantes,
+        diaPago: sesion.diaPago,
+      });
+
+      this.sesionesRegistroObligaciones.delete(usuarioId);
+
+      const consejo = generarConsejoAceleracionDeuda(
+        obligacion.saldo ?? 0,
+        obligacion.tasaEa ?? null,
+        obligacion.cuotasRestantes ?? 12,
+        obligacion.cuota,
+      );
+
+      return this.respuestasService.mensajeObligacionGuardada(obligacion, consejo);
+    }
+
+    return this.pedirSiguienteDatoObligacion(sesion);
   }
 }

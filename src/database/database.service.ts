@@ -43,6 +43,15 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       await this.execute(
         'ALTER TABLE transacciones ADD COLUMN IF NOT EXISTS cuenta_id UUID REFERENCES cuentas(id) ON DELETE SET NULL',
       );
+      await this.execute(
+        'ALTER TABLE obligaciones ADD COLUMN IF NOT EXISTS tasa_ea NUMERIC DEFAULT NULL',
+      );
+      await this.execute(
+        'ALTER TABLE obligaciones ADD COLUMN IF NOT EXISTS entidad TEXT DEFAULT NULL',
+      );
+      await this.execute(
+        'ALTER TABLE obligaciones ADD COLUMN IF NOT EXISTS cuotas_totales INT DEFAULT NULL',
+      );
     } catch {
       // Ignorar si la base de datos aún no está lista o en entornos de prueba mock
     }

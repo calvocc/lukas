@@ -89,17 +89,23 @@ _"Registrar tarjeta Nu cupo 3 millones corte 15 pago 5"_
    • _"45000 almuerzo débito bancolombia"_ (descuenta tu saldo al instante).
    • _"Ingreso 500000 en Nequi"_ o _"Me pagaron 3 millones"_ (abona a tu cuenta).
 
-3. 📊 *Consultas Inteligentes y Balance:*
+3. 🏦 *Créditos y Préstamos (Amortización y Aceleración):*
+   • _"Credito de vehiculo por 80.000.000 a una tasa de 11 EA a 46 meses, la fecha de pago oportuno son los 2"_
+   • _"Registrar crédito"_ (te guío paso a paso: monto, cuotas, tasa y día de pago).
+   • _"Mis deudas"_ (consolidado de préstamos, cuota mensual, saldo restante y total pasivos).
+   • Cálculo automático de cuota francesa y consejos de ahorro en intereses con abonos a capital.
+
+4. 📊 *Consultas Inteligentes y Balance:*
    • _"Mis tarjetas"_ (detalle de cupos, saldo en uso, tasas y cortes).
    • _"Saldo"_ o _"¿Cuánta plata tengo?"_ (tu liquidez propia, deuda en tarjetas y balance neto).
    • _"¿Cuándo corta la diners?"_ (días de corte, pago y ventana óptima de financiamiento).
    • _"¿Cuánto he gastado en comida?"_ o _"Gastos de esta semana"_.
 
-4. 📝 *Control Diario y Presupuesto:*
+5. 📝 *Control Diario y Presupuesto:*
    • _"85.000 mercado en efectivo"_
    • _"Mi presupuesto este mes es 3 millones"_ (alertas al 80% y 100%).
    • _"Borra el último"_ (deshace el último registro por error).
-   • _"Pagué la cuota del carro"_ o _"¿Cuánto debo en total?"_`;
+   • _"Pagué la cuota del carro"_.`;
   }
 
   mensajeRecomendacionTarjeta(
@@ -233,37 +239,80 @@ ${transaccion.medioPago === 'tarjeta' ? 'El cupo de tu tarjeta ha sido restablec
 • Te avisaré automáticamente al llegar al 80% y 100%.`;
   }
 
+  mensajeObligacionGuardada(obligacion: Obligacion, consejoAceleracion?: string): string {
+    const icono =
+      obligacion.nombre.toLowerCase().includes('vehic') || obligacion.nombre.toLowerCase().includes('carro') || obligacion.nombre.toLowerCase().includes('moto')
+        ? '🚗'
+        : obligacion.nombre.toLowerCase().includes('hipotec') || obligacion.nombre.toLowerCase().includes('casa') || obligacion.nombre.toLowerCase().includes('apto')
+          ? '🏠'
+          : '📋';
+
+    let texto = `🎉 *¡Compromiso financiero registrado con éxito!*\n\n`;
+    texto += `${icono} *${obligacion.nombre}*${obligacion.entidad ? ` (${obligacion.entidad})` : ''}\n`;
+    if (obligacion.saldo) {
+      texto += `• 💰 *Saldo adeudado:* *${formatearMoneda(obligacion.saldo)}*\n`;
+    }
+    texto += `• 📅 *Cuota mensual:* *${formatearMoneda(obligacion.cuota)}*\n`;
+    if (obligacion.tasaEa) {
+      texto += `• 📈 *Tasa de interés:* *${obligacion.tasaEa}% E.A.*`;
+      if (obligacion.tasaMv) {
+        texto += ` (~${obligacion.tasaMv}% M.V.)`;
+      }
+      texto += `\n`;
+    }
+    if (obligacion.cuotasRestantes) {
+      texto += `• ⏳ *Plazo restante:* *${obligacion.cuotasRestantes} meses* (cuotas)\n`;
+    }
+    texto += `• ⏰ *Fecha de pago oportuno:* *Día ${obligacion.diaPago}* de cada mes\n\n`;
+    texto += `🔔 *Tranquilo, yo me encargo:* Te recordaré con anticipación tu fecha límite de pago para evitar intereses moratorios o reportes.\n\n`;
+
+    if (consejoAceleracion) {
+      texto += `${consejoAceleracion}\n\n`;
+    }
+
+    texto += `💡 Cuando pagues tu cuota mensual, solo dime: _"ya pagué la cuota de ${obligacion.nombre}"_ y llevaré la cuenta regresiva.`;
+
+    return texto.trim();
+  }
+
   mensajeResumenDeudas(
     tarjetas: readonly Tarjeta[],
     obligaciones: readonly Obligacion[],
   ): string {
     let texto = `📊 *Resumen de tus Cuentas y Deudas:*\n\n`;
 
+    let deudaTotalTarjetas = 0;
     if (tarjetas.length > 0) {
       texto += `💳 *Tarjetas de Crédito:*\n`;
       for (const t of tarjetas) {
         const usado = (t.cupo ?? 0) - (t.cupoDisponible ?? t.cupo ?? 0);
+        deudaTotalTarjetas += usado;
         texto += `• *${t.nombre}:* Saldo en uso ${formatearMoneda(usado)} (Corte: día ${t.diaCorte}, Pago: día ${t.diaPago})\n`;
       }
       texto += `\n`;
     }
 
+    let deudaTotalCreditos = 0;
     if (obligaciones.length > 0) {
-      texto += `📋 *Deudas y Pagos Fijos:*\n`;
+      texto += `📋 *Créditos y Deudas a Cuotas:*\n`;
       for (const o of obligaciones) {
-        texto += `• *${o.nombre}:* Cuota ${formatearMoneda(o.cuota)} (Vence el día ${o.diaPago})`;
-        if (o.cuotasRestantes !== null) {
-          texto += ` - ${o.cuotasRestantes} cuotas restantes`;
-        }
-        texto += `\n`;
+        if (o.saldo) deudaTotalCreditos += o.saldo;
+        const saldoTexto = o.saldo ? ` | Saldo: ${formatearMoneda(o.saldo)}` : '';
+        const cuotasTexto = o.cuotasRestantes !== null ? ` | ${o.cuotasRestantes} cuotas restantes` : '';
+        const tasaTexto = o.tasaEa ? ` | Tasa: ${o.tasaEa}% E.A.` : '';
+        texto += `• *${o.nombre}:* Cuota ${formatearMoneda(o.cuota)} (Vence el día ${o.diaPago})${saldoTexto}${cuotasTexto}${tasaTexto}\n`;
       }
+      texto += `\n`;
     }
 
     if (tarjetas.length === 0 && obligaciones.length === 0) {
-      texto += `No tienes tarjetas ni obligaciones registradas aún.`;
+      texto += `No tienes tarjetas ni obligaciones registradas aún. Di _"registremos una tarjeta"_ o _"registrar crédito de vehículo"_.`;
+    } else {
+      const totalPasivos = deudaTotalTarjetas + deudaTotalCreditos;
+      texto += `🔴 *Total Pasivos / Deuda Consolidada:* *${formatearMoneda(totalPasivos)}*`;
     }
 
-    return texto;
+    return texto.trim();
   }
 
   mensajeListadoTarjetas(tarjetas: readonly Tarjeta[]): string {

@@ -123,11 +123,14 @@ export interface Obligacion {
   readonly usuarioId: string;
   readonly nombre: string;
   readonly tipo: TipoObligacion;
+  readonly entidad: string | null;
   readonly saldo: number | null;
   readonly tasaMv: number | null;
+  readonly tasaEa: number | null;
   readonly cuota: number;
   readonly diaPago: number;
   readonly cuotasRestantes: number | null;
+  readonly cuotasTotales: number | null;
   readonly activa: boolean;
   readonly creadoEn: Date;
 }
@@ -196,6 +199,19 @@ export interface ConfigCuentaExtraida {
   readonly saldo: number | null;
 }
 
+export interface ConfigObligacionExtraida {
+  readonly nombre: string;
+  readonly tipo: TipoObligacion; // 'deuda' | 'fijo'
+  readonly entidad?: string | null;
+  readonly saldo?: number | null;
+  readonly tasaEa?: number | null;
+  readonly tasaMv?: number | null;
+  readonly cuota?: number | null;
+  readonly diaPago?: number | null;
+  readonly cuotasRestantes?: number | null;
+  readonly cuotasTotales?: number | null;
+}
+
 export interface ParserResult {
   readonly intencion: IntencionMensaje;
   readonly tonoDetectado: TonoVoz;
@@ -212,6 +228,7 @@ export interface ParserResult {
   };
   readonly configTarjeta?: ConfigTarjetaExtraida;
   readonly configCuenta?: ConfigCuentaExtraida;
+  readonly configObligacion?: ConfigObligacionExtraida;
   readonly correccionCuotas?: {
     readonly tarjeta?: string;
     readonly nuevasCuotas: number;

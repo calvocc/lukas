@@ -11,7 +11,7 @@ import OpenAI from 'openai';
 import { LukasConfigService } from '../config/config.service';
 import { ParserResult } from '../domain/types';
 import { ProveedorIA, ContextoMensaje } from './parser.interface';
-import { extraerMontoColombiano, extraerDetallesTarjeta, extraerDetallesCuenta } from './parser.utils';
+import { extraerMontoColombiano, extraerDetallesTarjeta, extraerDetallesCuenta, extraerDetallesObligacion } from './parser.utils';
 
 @Injectable()
 export class OpenAiProvider implements ProveedorIA {
@@ -72,12 +72,13 @@ Intenciones posibles:
 - "config_presupuesto": Establecer o modificar el tope mensual de gasto global (ej: "mi presupuesto este mes es 3 millones", "cambiar umbral a 4.5m")
 - "config_tarjeta": EXCLUSIVAMENTE cuando el usuario quiere agregar o configurar una tarjeta de CRÉDITO con cupo, corte o pago (ej: "registrar tarjeta diners davivienda cupo de 14.000.000 corte los 20 pago los 5", "agregar tarjeta de crédito").
 - "config_cuenta": Cuando el usuario quiere agregar o configurar una tarjeta de DÉBITO, cuenta de ahorros, billetera digital (Nequi, Daviplata, Dale) o dinero en EFECTIVO (ej: "registrar tarjeta débito bancolombia con 1.500.000", "tengo 500 mil en nequi", "registrar cuenta de ahorros nu con saldo de 3 millones", "agregar efectivo 200 mil", "tengo 2 millones en débito"). NO pide día de corte ni día de pago.
+- "config_obligacion": Cuando el usuario quiere registrar o agregar un CRÉDITO, PRÉSTAMO, OBLIGACIÓN O DEUDA A CUOTAS (ej: "credito de vehiculo por 80.000.000 a una tasa de 11 EA a 46 meses, la fecha de pago oportuno son los 2", "préstamo libre inversión 15 millones 24 meses tasa 18 ea pago los 15", "crédito hipotecario por 150 millones pago los 5", "tengo una deuda con sufi por 80 millones"). Extrae concepto, saldo total, tasaEa, cuotasRestantes, diaPago, y cuota si la menciona.
 - "ayuda": Preguntas sobre qué puede hacer Lukas (ej: "ayuda", "qué puedes hacer")
 - "no_entendido": Todo lo demás
 
 Estructura JSON requerida:
 {
-  "intencion": "registro" | "consulta" | "pago_tarjeta" | "pago_obligacion" | "correccion" | "eliminacion" | "config_presupuesto" | "config_tarjeta" | "config_cuenta" | "ayuda" | "no_entendido",
+  "intencion": "registro" | "consulta" | "pago_tarjeta" | "pago_obligacion" | "correccion" | "eliminacion" | "config_presupuesto" | "config_tarjeta" | "config_cuenta" | "config_obligacion" | "ayuda" | "no_entendido",
   "tonoDetectado": "neutro" | "casual" | "entusiasta" | "formal",
   "transacciones": [
     {
@@ -124,6 +125,18 @@ Estructura JSON requerida:
     "tipo": "debito" | "ahorros" | "corriente" | "billetera" | "efectivo",
     "banco": string | null,
     "saldo": number | null
+  },
+  "configObligacion": {
+    "nombre": string | null,
+    "tipo": "deuda" | "fijo",
+    "entidad": string | null,
+    "saldo": number | null,
+    "tasaEa": number | null,
+    "tasaMv": number | null,
+    "cuota": number | null,
+    "diaPago": number | null,
+    "cuotasRestantes": number | null,
+    "cuotasTotales": number | null
   },
   "correccionCuotas": {
     "tarjeta": string | null,
@@ -278,6 +291,38 @@ Estructura JSON requerida:
         intencion: 'config_tarjeta',
         tonoDetectado: 'casual',
         configTarjeta,
+      };
+    }
+
+    // 3.5. Registrar o configurar una deuda, crédito o préstamo a cuotas
+    const esTerminoDeuda =
+      texto.includes('credito') ||
+      texto.includes('crédito') ||
+      texto.includes('prestamo') ||
+      texto.includes('préstamo') ||
+      texto.includes('deuda') ||
+      texto.includes('hipoteca') ||
+      texto.includes('libranza') ||
+      texto.includes('leasing');
+
+    const esAccionDeuda =
+      /(?:regis?tr\w*|agreg\w*|crear|meter|guardar|inscrib\w*|nueva|tengo)\s+(?:un\s+|una\s+|el\s+|la\s+|mi\s+|mis\s+|otro\s+|otra\s+)?(?:credito|crédito|prestamo|préstamo|deuda|hipoteca|libranza)/i.test(texto) ||
+      texto.startsWith('credito ') ||
+      texto.startsWith('crédito ') ||
+      texto.startsWith('prestamo ') ||
+      texto.startsWith('préstamo ') ||
+      texto.startsWith('deuda ') ||
+      texto.startsWith('tengo un credito') ||
+      texto.startsWith('tengo un crédito') ||
+      texto.startsWith('tengo una deuda') ||
+      (esTerminoDeuda && (texto.includes('tasa') || texto.includes('meses') || texto.includes('cuotas') || texto.includes('pago oportuno') || texto.includes('por ') || texto.includes('de ')));
+
+    if (esTerminoDeuda && esAccionDeuda && !texto.startsWith('ya pagué') && !texto.startsWith('ya pague') && !texto.startsWith('pagué') && !texto.startsWith('pague')) {
+      const configObligacion = extraerDetallesObligacion(mensaje);
+      return {
+        intencion: 'config_obligacion',
+        tonoDetectado: 'casual',
+        configObligacion,
       };
     }
 
@@ -755,6 +800,9 @@ Estructura JSON requerida:
         : undefined,
       configCuenta: typeof rec['configCuenta'] === 'object' && rec['configCuenta'] !== null
         ? (rec['configCuenta'] as ParserResult['configCuenta'])
+        : undefined,
+      configObligacion: typeof rec['configObligacion'] === 'object' && rec['configObligacion'] !== null
+        ? (rec['configObligacion'] as ParserResult['configObligacion'])
         : undefined,
       correccionCuotas: typeof rec['correccionCuotas'] === 'object' && rec['correccionCuotas'] !== null
         ? (rec['correccionCuotas'] as ParserResult['correccionCuotas'])

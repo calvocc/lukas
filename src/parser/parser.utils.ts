@@ -7,7 +7,7 @@
  * ========================================================
  */
 
-import { TipoCuenta } from '../domain/types';
+import { TipoCuenta, ConfigObligacionExtraida } from '../domain/types';
 
 export interface DetallesTarjetaExtraidos {
   readonly nombre: string;
@@ -320,5 +320,110 @@ export function extraerDetallesCuenta(texto: string): DetallesCuentaExtraidos {
     tipo,
     banco,
     saldo,
+  };
+}
+
+/**
+ * Extrae concepto, saldo/monto, tasa de interés, cuotas y día de pago de deudas y créditos.
+ * Ejemplo: "credito de vehiculo por 80.000.000 a una tasa de 11 EA a 46 meses, la fecha de pago oportuno son los 2"
+ */
+export function extraerDetallesObligacion(texto: string): ConfigObligacionExtraida {
+  const lower = texto.toLowerCase();
+
+  // 1. Día de pago oportuno
+  let diaPago: number | null = null;
+  const matchPago = /(?:fecha\s*(?:de)?\s*pago\s*(?:oportuno)?|pago\s*oportuno|pago|pagar|vence|vencimiento)\s*(?:los|el|del|día|dia|son\s*los)?\s*(\d{1,2})\b/i.exec(lower);
+  if (matchPago && matchPago[1]) {
+    const val = Number(matchPago[1]);
+    if (val >= 1 && val <= 31) diaPago = val;
+  }
+
+  // 2. Plazo / Cuotas / Meses
+  let cuotas: number | null = null;
+  const matchCuotas = /(\d+)\s*(?:meses|mes|cuotas|cuota|plazos?)/i.exec(lower);
+  if (matchCuotas && matchCuotas[1]) {
+    cuotas = Number(matchCuotas[1]);
+  }
+
+  // 3. Tasa de interés (% EA o % MV)
+  let tasaEa: number | null = null;
+  let tasaMv: number | null = null;
+  const matchTasa = /(?:tasa|inter[eé]s)\s*(?:del?|de)?\s*(\d{1,2}(?:[.,]\d{1,2})?)\s*(?:%|\bpor\s*ciento)?\s*(ea|e\.a\.|efectivo\s*anual|mv|m\.v\.|mensual|mes\s*vencido)?/i.exec(lower);
+  if (matchTasa && matchTasa[1]) {
+    const val = Number(matchTasa[1].replace(',', '.'));
+    const tipoTasa = matchTasa[2]?.toLowerCase() ?? '';
+    const esMensual = tipoTasa.includes('mv') || tipoTasa.includes('mensual') || tipoTasa.includes('vencido');
+    if (esMensual) {
+      tasaMv = val;
+      tasaEa = Math.round(((Math.pow(1 + val / 100, 12) - 1) * 100) * 10) / 10;
+    } else {
+      tasaEa = val;
+      tasaMv = Math.round(((Math.pow(1 + val / 100, 1 / 12) - 1) * 100) * 100) / 100;
+    }
+  }
+
+  // 4. Saldo / Monto total del crédito
+  let saldo: number | null = null;
+  const matchSaldo = /(?:por|de|monto\s*(?:de)?|valor\s*(?:de)?|saldo\s*(?:de)?|capital\s*(?:de)?|prestamo\s*(?:de)?|préstamo\s*(?:de)?)\s*([$0-9.,'’\s]+?(?:millones?|millón|millon|mill\b|mil|m|k)?)(?:\s+(?:a\s+una\s+tasa|a\s+tasa|tasa|a\s+\d+\s+meses|a\s+\d+\s+cuotas|cuota|con|pago|fecha|$))/i.exec(lower);
+  if (matchSaldo && matchSaldo[1]) {
+    saldo = extraerMontoColombiano(matchSaldo[1]);
+  }
+  if (!saldo) {
+    const montoGeneral = extraerMontoColombiano(lower);
+    if (montoGeneral && montoGeneral > 100 && montoGeneral !== diaPago && montoGeneral !== cuotas) {
+      saldo = montoGeneral;
+    }
+  }
+
+  // 5. Cuota mensual explícita (si la menciona)
+  let cuota: number | null = null;
+  const matchCuota = /(?:cuota\s*(?:mensual)?)\s*(?:es|de)?\s*([$0-9.,'’]+(?:\s*(?:millones?|millón|millon|mill\b|mil|m|k))?)/i.exec(lower);
+  if (matchCuota && matchCuota[1]) {
+    cuota = extraerMontoColombiano(matchCuota[1]);
+  }
+
+  // 6. Entidad / Banco
+  let entidad: string | null = null;
+  if (lower.includes('sufi')) entidad = 'Sufi (Bancolombia)';
+  else if (lower.includes('bancolombia')) entidad = 'Bancolombia';
+  else if (lower.includes('davivienda')) entidad = 'Davivienda';
+  else if (lower.includes('bogota') || lower.includes('bogotá')) entidad = 'Banco de Bogotá';
+  else if (lower.includes('bbva')) entidad = 'BBVA';
+  else if (lower.includes('occidente')) entidad = 'Banco de Occidente';
+  else if (lower.includes('popular')) entidad = 'Banco Popular';
+  else if (lower.includes('av villas') || lower.includes('villas')) entidad = 'AV Villas';
+  else if (lower.includes('itau') || lower.includes('itaú')) entidad = 'Itaú';
+  else if (lower.includes('falabella')) entidad = 'Banco Falabella';
+  else if (lower.includes('fna') || lower.includes('fondo nacional del ahorro')) entidad = 'FNA';
+
+  // 7. Nombre / Concepto
+  let nombre = 'Crédito';
+  if (lower.includes('vehiculo') || lower.includes('vehículo') || lower.includes('carro') || lower.includes('auto') || lower.includes('moto')) {
+    nombre = entidad ? `Crédito Vehículo ${entidad}` : 'Crédito de Vehículo';
+  } else if (lower.includes('hipotec') || lower.includes('vivienda') || lower.includes('casa') || lower.includes('apto') || lower.includes('apartamento')) {
+    nombre = entidad ? `Crédito Hipotecario ${entidad}` : 'Crédito Hipotecario';
+  } else if (lower.includes('libranza')) {
+    nombre = entidad ? `Crédito Libranza ${entidad}` : 'Crédito de Libranza';
+  } else if (lower.includes('libre inversion') || lower.includes('libre inversión') || lower.includes('consumo')) {
+    nombre = entidad ? `Libre Inversión ${entidad}` : 'Crédito de Libre Inversión';
+  } else if (lower.includes('estudio') || lower.includes('educativo') || lower.includes('icetex')) {
+    nombre = 'Crédito Educativo';
+  } else if (lower.includes('prestamo personal') || lower.includes('préstamo personal') || lower.includes('familiar') || lower.includes('amigo')) {
+    nombre = 'Préstamo Personal';
+  } else if (entidad) {
+    nombre = `Crédito ${entidad}`;
+  }
+
+  return {
+    nombre,
+    tipo: 'deuda',
+    entidad,
+    saldo,
+    tasaEa,
+    tasaMv,
+    cuota,
+    diaPago,
+    cuotasRestantes: cuotas,
+    cuotasTotales: cuotas,
   };
 }

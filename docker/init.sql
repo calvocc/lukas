@@ -130,11 +130,14 @@ CREATE TABLE IF NOT EXISTS obligaciones (
   usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
   nombre TEXT NOT NULL,
   tipo TEXT NOT NULL CHECK (tipo IN ('deuda', 'fijo')),
+  entidad TEXT,
   saldo NUMERIC,
   tasa_mv NUMERIC,
+  tasa_ea NUMERIC,
   cuota NUMERIC NOT NULL,
   dia_pago INT NOT NULL CHECK (dia_pago BETWEEN 1 AND 31),
   cuotas_restantes INT,
+  cuotas_totales INT,
   activa BOOLEAN NOT NULL DEFAULT TRUE,
   creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
