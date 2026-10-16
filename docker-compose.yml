@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  lukas-postgres:
+    image: postgres:16-alpine
+    container_name: lukas-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: lukas_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - lukas_pgdata:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d lukas_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  lukas_pgdata:
+    name: lukas_pgdata
