@@ -8,10 +8,39 @@
 
 import { Injectable } from '@nestjs/common';
 import { formatearMoneda, formatearFechaCorta, formatearFechaLarga, formatearPorcentaje } from './formateador';
-import { RecomendacionTarjeta, Transaccion, Tarjeta, Obligacion } from '../domain/types';
+import { RecomendacionTarjeta, Transaccion, Tarjeta, Obligacion, Cuenta } from '../domain/types';
 
 @Injectable()
 export class RespuestasService {
+  mensajeCuentaGuardada(cuenta: Cuenta): string {
+    const icono =
+      cuenta.tipo === 'efectivo'
+        ? '💵'
+        : cuenta.tipo === 'billetera'
+          ? '📱'
+          : '🏦';
+
+    const tipoLabel =
+      cuenta.tipo === 'debito'
+        ? 'Tarjeta Débito'
+        : cuenta.tipo === 'ahorros'
+          ? 'Cuenta de Ahorros'
+          : cuenta.tipo === 'corriente'
+            ? 'Cuenta Corriente'
+            : cuenta.tipo === 'billetera'
+              ? 'Billetera Digital'
+              : 'Dinero en Efectivo';
+
+    return `${icono} *¡Cuenta registrada con éxito!*
+
+• Nombre: *${cuenta.nombre}*
+• Tipo: *${tipoLabel}*${cuenta.banco ? ` (${cuenta.banco})` : ''}
+• 💰 Saldo disponible inicial: *${formatearMoneda(cuenta.saldo)}*
+
+💡 *¿Cómo funciona?*
+• Cada compra con débito o retiro en efectivo descontará automáticamente de este saldo.
+• Y cuando registres un ingreso (nómina o transferencia), se sumará a tus cuentas de liquidez.`;
+  }
   mensajeBienvenida(): string {
     return `👋 ¡Hola! Soy *Lukas*, tu asistente de finanzas personales por WhatsApp para Colombia 🇨🇴.
 
@@ -113,6 +142,7 @@ Registra una diciendo: _"Registrar tarjeta Nu cupo 3 millones corte 15 pago 5"_.
   mensajeRegistroExitoso(
     transaccion: Transaccion,
     tarjeta?: Tarjeta | null,
+    cuenta?: Cuenta | null,
     gastoAcumuladoMes?: number,
     limitePresupuesto?: number | null,
   ): string {
@@ -137,6 +167,10 @@ Registra una diciendo: _"Registrar tarjeta Nu cupo 3 millones corte 15 pago 5"_.
         texto += `\n👉 Para no regalarle intereses al banco, redifiérela a *1 cuota* en la app de ${tarjeta.banco} antes de tu corte del día ${tarjeta.diaCorte}.`;
         texto += `\nCuando lo hagas, solo dime: _"ya pasé la de ${transaccion.descripcion ?? 'esa'} a 1 cuota"_.`;
       }
+    } else if (cuenta) {
+      const icono = cuenta.tipo === 'efectivo' ? '💵' : cuenta.tipo === 'billetera' ? '📱' : '💳';
+      texto += `\n${icono} *Medio de pago:* ${cuenta.nombre} (${cuenta.tipo})`;
+      texto += `\n💰 *Saldo disponible en ${cuenta.nombre}:* ${formatearMoneda(cuenta.saldo)}`;
     } else {
       texto += `\n💵 *Medio de pago:* ${transaccion.medioPago}`;
     }
@@ -259,7 +293,27 @@ o simplemente diciendo: _"registremos una tarjeta"_ y te pediré los datos paso 
     return texto.trim();
   }
 
-  mensajeConsultaSaldo(tarjeta: Tarjeta | null, tarjetas: readonly Tarjeta[]): string {
+  mensajeConsultaSaldo(
+    tarjeta: Tarjeta | null,
+    tarjetas: readonly Tarjeta[],
+    cuentaSeleccionada?: Cuenta | null,
+    cuentas: readonly Cuenta[] = [],
+  ): string {
+    if (cuentaSeleccionada) {
+      const icono =
+        cuentaSeleccionada.tipo === 'efectivo'
+          ? '💵'
+          : cuentaSeleccionada.tipo === 'billetera'
+            ? '📱'
+            : '🏦';
+
+      return `${icono} *Saldo disponible en ${cuentaSeleccionada.nombre}:*
+
+• 🟢 *Saldo actual disponible:* ${formatearMoneda(cuentaSeleccionada.saldo)}
+• 🏷️ Tipo: ${cuentaSeleccionada.tipo}${cuentaSeleccionada.banco ? ` (${cuentaSeleccionada.banco})` : ''}
+• 🛡️ No genera intereses ni tiene fechas de corte.`;
+    }
+
     if (tarjeta) {
       const cupoTotal = tarjeta.cupo ?? 0;
       const cupoDisp = tarjeta.cupoDisponible ?? cupoTotal;
@@ -274,26 +328,48 @@ o simplemente diciendo: _"registremos una tarjeta"_ y te pediré los datos paso 
 • ✂️ *Corte:* día ${tarjeta.diaCorte} | 📅 *Pago límite:* día ${tarjeta.diaPago}`;
     }
 
-    if (tarjetas.length === 0) {
-      return `💳 No tienes tarjetas registradas aún. Di _"registremos una tarjeta"_ para agregar la primera.`;
+    if (tarjetas.length === 0 && cuentas.length === 0) {
+      return `💳 No tienes tarjetas ni cuentas registradas aún. Di _"registremos una tarjeta"_ o _"registrar débito bancolombia"_ para comenzar.`;
     }
 
-    let texto = `💳 *Resumen de Saldos y Cupos:*\n\n`;
-    let cupoTotalGlobal = 0;
-    let cupoDispGlobal = 0;
+    let texto = `📊 *Resumen de Liquidez y Tarjetas:*\n\n`;
 
-    tarjetas.forEach((t) => {
-      const total = t.cupo ?? 0;
-      const disp = t.cupoDisponible ?? total;
-      const usado = Math.max(0, total - disp);
-      cupoTotalGlobal += total;
-      cupoDispGlobal += disp;
+    // 1. Cuentas de liquidez / Dinero propio
+    let totalLiquido = 0;
+    if (cuentas.length > 0) {
+      texto += `🟢 *Tu Dinero Propio (Liquidez):*\n`;
+      for (const c of cuentas) {
+        totalLiquido += c.saldo;
+        const icono = c.tipo === 'efectivo' ? '💵' : c.tipo === 'billetera' ? '📱' : '💳';
+        texto += `• ${icono} *${c.nombre}:* ${formatearMoneda(c.saldo)}\n`;
+      }
+      texto += `💰 *Total dinero propio disponible:* *${formatearMoneda(totalLiquido)}*\n\n`;
+    }
 
-      texto += `• *${t.nombre}:* Disponible *${formatearMoneda(disp)}* (Usado: ${formatearMoneda(usado)})\n`;
-    });
+    // 2. Tarjetas de crédito
+    let totalCupoCredito = 0;
+    let totalDeudaCredito = 0;
+    if (tarjetas.length > 0) {
+      texto += `💳 *Tarjetas de Crédito (Apalancamiento):*\n`;
+      for (const t of tarjetas) {
+        const total = t.cupo ?? 0;
+        const disp = t.cupoDisponible ?? total;
+        const usado = Math.max(0, total - disp);
+        totalCupoCredito += total;
+        totalDeudaCredito += usado;
+        texto += `• *${t.nombre}:* Cupo libre ${formatearMoneda(disp)} (En uso: ${formatearMoneda(usado)})\n`;
+      }
+      texto += `🔴 *Deuda total en tarjetas:* *${formatearMoneda(totalDeudaCredito)}* (Cupo total: ${formatearMoneda(totalCupoCredito)})\n\n`;
+    }
 
-    texto += `\n💰 *Total cupo disponible global:* *${formatearMoneda(cupoDispGlobal)}* de ${formatearMoneda(cupoTotalGlobal)}`;
-    return texto;
+    // 3. Balance neto si tiene ambos
+    if (cuentas.length > 0 && tarjetas.length > 0) {
+      const balanceNeto = totalLiquido - totalDeudaCredito;
+      const signoNeto = balanceNeto >= 0 ? '🟢' : '🔴';
+      texto += `⚖️ *Balance Neto (Dinero propio - Deuda actual):* ${signoNeto} *${formatearMoneda(balanceNeto)}*`;
+    }
+
+    return texto.trim();
   }
 
   mensajeConsultaCiclo(tarjeta: Tarjeta | null, tarjetas: readonly Tarjeta[]): string {

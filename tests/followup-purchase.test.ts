@@ -17,6 +17,7 @@ import { ParserService } from '../src/parser/parser.service';
 import { RespuestasService } from '../src/respuestas/respuestas.service';
 import { MovimientosService } from '../src/movimientos/movimientos.service';
 import { TarjetasService } from '../src/tarjetas/tarjetas.service';
+import { CuentasService } from '../src/cuentas/cuentas.service';
 import { ObligacionesService } from '../src/obligaciones/obligaciones.service';
 import { DatabaseService } from '../src/database/database.service';
 import { Usuario, Tarjeta, Transaccion, RecomendacionTarjeta } from '../src/domain/types';
@@ -204,6 +205,14 @@ describe('Seguimiento Contextual de Compras ("lo compré")', () => {
         ]),
       };
 
+      const cuentasServiceMock: Partial<CuentasService> = {
+        listarPorUsuario: vi.fn().mockResolvedValue([]),
+        buscarPorNombreOAlias: vi.fn().mockResolvedValue(null),
+        buscarPorId: vi.fn().mockResolvedValue(null),
+        actualizarSaldo: vi.fn().mockResolvedValue(undefined),
+        calcularSaldoTotalLiquido: vi.fn().mockResolvedValue(0),
+      };
+
       const obligacionesServiceMock: Partial<ObligacionesService> = {
         listarPorUsuario: vi.fn().mockResolvedValue([]),
       };
@@ -220,6 +229,7 @@ describe('Seguimiento Contextual de Compras ("lo compré")', () => {
         respuestasService,
         movimientosServiceMock as MovimientosService,
         tarjetasServiceMock as TarjetasService,
+        cuentasServiceMock as CuentasService,
         obligacionesServiceMock as ObligacionesService,
         dbMock as DatabaseService,
       );

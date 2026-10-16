@@ -18,6 +18,7 @@ import { ParserModule } from './parser/parser.module';
 import { RespuestasModule } from './respuestas/respuestas.module';
 import { AlertasModule } from './alertas/alertas.module';
 import { ReportesModule } from './reportes/reportes.module';
+import { CuentasModule } from './cuentas/cuentas.module';
 import { CanalModule } from './canal/canal.module';
 
 @Module({
@@ -27,6 +28,7 @@ import { CanalModule } from './canal/canal.module';
     DatabaseModule,
     UsuariosModule,
     TarjetasModule,
+    CuentasModule,
     ObligacionesModule,
     MovimientosModule,
     ParserModule,

@@ -24,6 +24,25 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       await this.execute(
         'ALTER TABLE tarjetas ADD COLUMN IF NOT EXISTS tasa_interes_ea NUMERIC DEFAULT NULL',
       );
+      await this.execute(`
+        CREATE TABLE IF NOT EXISTS cuentas (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+          nombre VARCHAR(100) NOT NULL,
+          tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('debito', 'ahorros', 'corriente', 'billetera', 'efectivo')),
+          banco VARCHAR(100),
+          saldo NUMERIC(14, 2) NOT NULL DEFAULT 0.00,
+          moneda VARCHAR(3) NOT NULL DEFAULT 'COP',
+          es_default BOOLEAN NOT NULL DEFAULT false,
+          activa BOOLEAN NOT NULL DEFAULT true,
+          creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          actualizada_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          UNIQUE (usuario_id, nombre)
+        );
+      `);
+      await this.execute(
+        'ALTER TABLE transacciones ADD COLUMN IF NOT EXISTS cuenta_id UUID REFERENCES cuentas(id) ON DELETE SET NULL',
+      );
     } catch {
       // Ignorar si la base de datos aún no está lista o en entornos de prueba mock
     }

@@ -60,7 +60,21 @@ CREATE TABLE IF NOT EXISTS tarjetas (
   meta_exoneracion NUMERIC DEFAULT 0,
   tasa_interes_ea NUMERIC DEFAULT NULL,
   activa BOOLEAN NOT NULL DEFAULT TRUE,
+);
+
+-- 3.5. Cuentas de Liquidez (Débito, Ahorros, Billeteras y Efectivo)
+CREATE TABLE IF NOT EXISTS cuentas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  usuario_id UUID NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  nombre VARCHAR(100) NOT NULL,
+  tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('debito', 'ahorros', 'corriente', 'billetera', 'efectivo')),
+  banco VARCHAR(100),
+  saldo NUMERIC(14, 2) NOT NULL DEFAULT 0.00,
+  moneda VARCHAR(3) NOT NULL DEFAULT 'COP',
+  es_default BOOLEAN NOT NULL DEFAULT FALSE,
+  activa BOOLEAN NOT NULL DEFAULT TRUE,
   creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  actualizada_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (usuario_id, nombre)
 );
 
@@ -76,6 +90,7 @@ CREATE TABLE IF NOT EXISTS transacciones (
   medio_pago TEXT NOT NULL DEFAULT 'tarjeta'
     CHECK (medio_pago IN ('tarjeta', 'debito', 'efectivo', 'transferencia')),
   tarjeta_id UUID REFERENCES tarjetas(id) ON DELETE SET NULL,
+  cuenta_id UUID REFERENCES cuentas(id) ON DELETE SET NULL,
   cuotas INT NOT NULL DEFAULT 1 CHECK (cuotas >= 1),
   cuotas_originales INT DEFAULT 1,
   pendiente_rediferir BOOLEAN NOT NULL DEFAULT FALSE,

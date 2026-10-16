@@ -11,7 +11,7 @@ import OpenAI from 'openai';
 import { LukasConfigService } from '../config/config.service';
 import { ParserResult } from '../domain/types';
 import { ProveedorIA, ContextoMensaje } from './parser.interface';
-import { extraerMontoColombiano, extraerDetallesTarjeta } from './parser.utils';
+import { extraerMontoColombiano, extraerDetallesTarjeta, extraerDetallesCuenta } from './parser.utils';
 
 @Injectable()
 export class OpenAiProvider implements ProveedorIA {
@@ -40,13 +40,14 @@ NUNCA respondas con texto conversacional ni hagas cálculos matemáticos.
 
 Contexto del usuario:
 - Fecha actual: ${contexto.fechaActual}
-- Tarjetas activas: ${JSON.stringify(contexto.tarjetasActivas)}
+- Tarjetas de crédito activas: ${JSON.stringify(contexto.tarjetasActivas)}
+- Cuentas activas de liquidez (Débito/Ahorros/Billeteras/Efectivo): ${JSON.stringify(contexto.cuentasActivas ?? [])}
 - Obligaciones/Deudas activas: ${JSON.stringify(contexto.obligacionesActivas)}
 - Última transacción: ${contexto.ultimaTransaccion ? JSON.stringify(contexto.ultimaTransaccion) : 'Ninguna'}
 - Recomendación previa de compra reciente: ${contexto.recomendacionPrevia ? JSON.stringify(contexto.recomendacionPrevia) : 'Ninguna'}
 
 Intenciones posibles:
-- "registro": Gasto o ingreso (ej: "85000 mercado gold", "me pagaron 3 millones").
+- "registro": Gasto o ingreso (ej: "85000 mercado gold", "me pagaron 3 millones", "45000 almuerzo debito bancolombia").
     * IMPORTANTE - CONFIRMACIÓN DE COMPRA PREVIA: Si el usuario dice "lo compré", "lo compre", "la compré", "ya lo compré", "ya la compré", "comprado", "listo", "ya lo pagué con esa", "lo compré con la master", o similar, Y en el contexto existe una "Recomendación previa de compra reciente":
       DEBES clasificarlo con intención "registro" de un gasto:
       * monto: el monto de la recomendación previa
@@ -56,12 +57,12 @@ Intenciones posibles:
       * medioPago: "tarjeta"
       * tarjeta: si el usuario especifica otra tarjeta en su mensaje (ej: "lo compré con la master"), usa esa tarjeta; si no menciona tarjeta, usa la tarjetaRecomendadaNombre de la recomendación previa.
 - "consulta": Preguntas o consultas del usuario. DEBES determinar la intención y el campo "consulta.tipoConsulta" exacto:
-    * "tarjetas": cuando el usuario pide ver, listar o consultar cuáles tarjetas tiene registradas (ej: "muéstrame mis tarjetas", "qué tarjetas tengo", "ver tarjetas", "tarjetas registradas", "cuáles tarjetas tengo", "hola me indicas qué tarjetas tengo registradas").
-    * "saldo": cuando pregunta por el cupo disponible, saldo o cuánto le queda en una tarjeta o en general (ej: "cuánto cupo tengo en la diners", "cuánto me queda", "saldo de la gold", "cuál es mi cupo disponible"). Extrae el nombre de la tarjeta en "consulta.tarjeta" si la menciona.
-    * "ciclo_tarjeta": cuando pregunta por fechas de corte, días de pago o plazos de sus tarjetas (ej: "cuándo corta la nu", "cuándo debo pagar la diners", "fechas de corte", "cuándo es mi fecha límite de pago"). Extrae la tarjeta en "consulta.tarjeta" si la menciona.
+    * "tarjetas": cuando el usuario pide ver, listar o consultar cuáles tarjetas de crédito tiene registradas (ej: "muéstrame mis tarjetas", "qué tarjetas tengo", "ver tarjetas", "tarjetas registradas", "cuáles tarjetas tengo", "hola me indicas qué tarjetas tengo registradas").
+    * "saldo": cuando pregunta por el cupo disponible de una tarjeta de crédito, o por el saldo en cuentas de débito, billeteras (Nequi, Daviplata), efectivo o liquidez total (ej: "cuánto cupo tengo en la diners", "cuánto me queda", "saldo de la gold", "cuánto tengo en nequi", "cuánta plata tengo", "mis saldos", "saldo débito"). Extrae el nombre de la tarjeta o cuenta en "consulta.tarjeta" si la menciona.
+    * "ciclo_tarjeta": cuando pregunta por fechas de corte, días de pago o plazos de sus tarjetas de crédito (ej: "cuándo corta la nu", "cuándo debo pagar la diners", "fechas de corte", "cuándo es mi fecha límite de pago"). Extrae la tarjeta en "consulta.tarjeta" si la menciona.
     * "mejor_tarjeta": cuando el usuario pide recomendación sobre qué tarjeta usar para realizar una compra (ej: "qué tarjeta uso hoy para 500 mil", "cuál tarjeta uso", "con qué tarjeta compro", "quiero comprar un tv de 1.200.000 a 2 cuotas", "voy a comprar..."). Extrae "consulta.montoSimulado", si indica cuotas extrae "consulta.cuotasSimuladas" (ej: 2), y el artículo o concepto en "consulta.descripcionSimulada" (ej: "tv").
     * "deudas": cuando pregunta cuánto debe en total, saldo deudor o deudas pendientes (ej: "cuánto debo en total", "mis deudas", "deuda consolidada", "obligaciones pendientes").
-    * "total_periodo": cuando pregunta cuánto ha gastado en un período específico (ej: "cuánto he gastado hoy", "gastos de esta semana", "cuánto gasté este mes", "cuánto gasté el mes pasado"). En "consulta.periodo" indica "hoy", "semana", "mes" o "mes_pasado".
+    * "total_periodo": cuando pregunta cuánto ha gastado en un período específico (ej: "cuánto he gastado hoy", "gastos de esta semana", "cuánto gasté este mes", "cuánto gasté el mes pasado", "qué compré este mes"). En "consulta.periodo" indica "hoy", "semana", "mes" o "mes_pasado".
     * "total_categoria": cuando pregunta cuánto ha gastado en un rubro o categoría específica (ej: "cuánto he gastado en comida", "cuánto llevo en mercado este mes", "gastos en transporte"). En "consulta.categoriaConsulta" indica la categoría (ej: "Comida", "Transporte", etc.).
     * "resumen" o "balance": cuando pide balance general, estado del mes o cómo va (ej: "cómo voy este mes", "resumen del mes", "balance general").
 - "pago_tarjeta": Cuando el usuario dice que ya pagó su tarjeta (ej: "ya pagué la gold", "pagué nu")
@@ -69,16 +70,14 @@ Intenciones posibles:
 - "correccion": Corregir o cambiar cuotas de una compra (ej: "ya pasé la de amazon a 1 cuota", "cambiar a 1 cuota")
 - "eliminacion": Borrar la última transacción (ej: "borra el último", "elimina ese gasto")
 - "config_presupuesto": Establecer o modificar el tope mensual de gasto global (ej: "mi presupuesto este mes es 3 millones", "cambiar umbral a 4.5m")
-- "config_tarjeta": Cuando el usuario quiere agregar, registrar o configurar una tarjeta de crédito, ya sea iniciando el proceso o con datos completos (ej: "registremos una tarjeta", "agregar tarjeta", "registrar tarjeta diners davivienda cupo de 14.000.000 corte los 20 pago los 5"). Distingue entre:
-    * "cupo": cupo total asignado/aprobado por el banco.
-    * "cupoDisponible": cupo libre para gastar hoy. Si dice cuánto debe, cupoDisponible = cupo - deuda. Si no especifica deuda, puede ser igual a cupo o null.
-    * "tasaInteresEa": tasa de interés en porcentaje Efectivo Anual E.A. (ej: 28.5 para 28.5% E.A.). Si da mensual, conviértela a E.A. Si no la dice, null.
+- "config_tarjeta": EXCLUSIVAMENTE cuando el usuario quiere agregar o configurar una tarjeta de CRÉDITO con cupo, corte o pago (ej: "registrar tarjeta diners davivienda cupo de 14.000.000 corte los 20 pago los 5", "agregar tarjeta de crédito").
+- "config_cuenta": Cuando el usuario quiere agregar o configurar una tarjeta de DÉBITO, cuenta de ahorros, billetera digital (Nequi, Daviplata, Dale) o dinero en EFECTIVO (ej: "registrar tarjeta débito bancolombia con 1.500.000", "tengo 500 mil en nequi", "registrar cuenta de ahorros nu con saldo de 3 millones", "agregar efectivo 200 mil", "tengo 2 millones en débito"). NO pide día de corte ni día de pago.
 - "ayuda": Preguntas sobre qué puede hacer Lukas (ej: "ayuda", "qué puedes hacer")
 - "no_entendido": Todo lo demás
 
 Estructura JSON requerida:
 {
-  "intencion": "registro" | "consulta" | "pago_tarjeta" | "pago_obligacion" | "correccion" | "eliminacion" | "config_presupuesto" | "config_tarjeta" | "ayuda" | "no_entendido",
+  "intencion": "registro" | "consulta" | "pago_tarjeta" | "pago_obligacion" | "correccion" | "eliminacion" | "config_presupuesto" | "config_tarjeta" | "config_cuenta" | "ayuda" | "no_entendido",
   "tonoDetectado": "neutro" | "casual" | "entusiasta" | "formal",
   "transacciones": [
     {
@@ -119,6 +118,12 @@ Estructura JSON requerida:
     "tasaInteresEa": number | null,
     "diaCorte": number | null,
     "diaPago": number | null
+  },
+  "configCuenta": {
+    "nombre": string | null,
+    "tipo": "debito" | "ahorros" | "corriente" | "billetera" | "efectivo",
+    "banco": string | null,
+    "saldo": number | null
   },
   "correccionCuotas": {
     "tarjeta": string | null,
@@ -225,13 +230,47 @@ Estructura JSON requerida:
       return { intencion: 'eliminacion', tonoDetectado: 'casual' };
     }
 
+    // 2.5. Registrar o configurar Cuenta de Liquidez (Débito, Ahorros, Billetera o Efectivo)
+    const esTerminoLiquidez =
+      texto.includes('debito') ||
+      texto.includes('débito') ||
+      texto.includes('nequi') ||
+      texto.includes('daviplata') ||
+      texto.includes('dale') ||
+      texto.includes('cuenta de ahorro') ||
+      texto.includes('cuenta de ahorros') ||
+      texto.includes('cuenta corriente') ||
+      texto.includes('efectivo') ||
+      texto.includes('plata en mano');
+
+    const esAccionCuenta =
+      /(?:regis?tr\w*|agreg\w*|crear|meter|guardar|inscrib\w*|nueva|tengo|saldo)\s+(?:una\s+|la\s+|mi\s+|mis\s+|otra\s+)?(?:cuenta|debito|débito|nequi|daviplata|efectivo|plata)/i.test(texto) ||
+      texto.startsWith('tengo ') ||
+      texto.startsWith('saldo en ') ||
+      texto === 'registrar cuenta' ||
+      texto === 'agregar cuenta' ||
+      texto === 'registrar debito' ||
+      texto === 'agregar debito' ||
+      texto === 'registrar débito' ||
+      (esTerminoLiquidez && (texto.includes('saldo') || texto.includes('con') || texto.includes('tengo')));
+
+    if (esTerminoLiquidez && esAccionCuenta) {
+      const configCuenta = extraerDetallesCuenta(mensaje);
+      return {
+        intencion: 'config_cuenta',
+        tonoDetectado: 'casual',
+        configCuenta,
+      };
+    }
+
     // 3. Registrar o agregar tarjeta de crédito (tolera errores como "registar", "dinner", "registremos una tarjeta", etc.)
-    const tienePalabraTarjeta = texto.includes('tarjeta') || texto.includes('tc');
+    const tienePalabraTarjeta = (texto.includes('tarjeta') || texto.includes('tc')) && !esTerminoLiquidez;
     const tieneCorteOPago = texto.includes('corte') && (texto.includes('pago') || texto.includes('cupo'));
     const esComandoRegistroTarjeta =
-      /(?:regis?tr\w*|agreg\w*|crear|meter|guardar|inscrib\w*|nueva)\s+(?:una\s+|la\s+|mi\s+|mis\s+|otra\s+)?tarjeta/i.test(texto) ||
-      texto.includes('configurar tarjeta') ||
-      (tienePalabraTarjeta && (texto.includes('cupo') || tieneCorteOPago));
+      !esTerminoLiquidez &&
+      (/(?:regis?tr\w*|agreg\w*|crear|meter|guardar|inscrib\w*|nueva)\s+(?:una\s+|la\s+|mi\s+|mis\s+|otra\s+)?tarjeta/i.test(texto) ||
+        texto.includes('configurar tarjeta') ||
+        (tienePalabraTarjeta && (texto.includes('cupo') || tieneCorteOPago)));
 
     if (esComandoRegistroTarjeta) {
       const configTarjeta = extraerDetallesTarjeta(mensaje);
@@ -584,6 +623,45 @@ Estructura JSON requerida:
         }
       }
 
+      // Buscar si menciona alguna cuenta de liquidez (débito, ahorros, nequi, etc.)
+      let cuentaEncontrada: string | null = null;
+      if (contexto.cuentasActivas && contexto.cuentasActivas.length > 0) {
+        for (const c of contexto.cuentasActivas) {
+          const nom = c.nombre.toLowerCase();
+          const banco = c.banco?.toLowerCase() ?? '';
+          if (
+            texto.includes(nom) ||
+            (banco.length > 0 && texto.includes(banco)) ||
+            palabras.some((p) => p.length >= 2 && (nom.includes(p) || (banco.length > 0 && banco.includes(p))))
+          ) {
+            cuentaEncontrada = c.nombre;
+            break;
+          }
+        }
+      }
+
+      // Determinar medio de pago específico
+      let medioPago: 'tarjeta' | 'efectivo' | 'transferencia' | 'debito' = tarjetaEncontrada ? 'tarjeta' : 'efectivo';
+      if (texto.includes('debito') || texto.includes('débito')) {
+        medioPago = 'debito';
+      } else if (
+        texto.includes('nequi') ||
+        texto.includes('daviplata') ||
+        texto.includes('transferencia') ||
+        texto.includes('dale')
+      ) {
+        medioPago = 'transferencia';
+      } else if (cuentaEncontrada) {
+        const cuentaMatch = contexto.cuentasActivas?.find((c) => c.nombre === cuentaEncontrada);
+        if (cuentaMatch?.tipo === 'debito') {
+          medioPago = 'debito';
+        } else if (cuentaMatch?.tipo === 'billetera') {
+          medioPago = 'transferencia';
+        } else if (cuentaMatch?.tipo === 'efectivo') {
+          medioPago = 'efectivo';
+        }
+      }
+
       // Buscar si menciona cuotas
       let cuotas = 1;
       const cuotasMatch = texto.match(/(\d+)\s*cuota/);
@@ -610,8 +688,8 @@ Estructura JSON requerida:
             categoriaConfianza: 'alta',
             descripcion: texto,
             tipo: texto.includes('me pagaron') || texto.includes('ingreso') ? 'ingreso' : 'gasto',
-            medioPago: tarjetaEncontrada ? 'tarjeta' : 'efectivo',
-            tarjeta: tarjetaEncontrada,
+            medioPago,
+            tarjeta: tarjetaEncontrada ?? cuentaEncontrada,
             cuotas,
           },
         ],
@@ -674,6 +752,9 @@ Estructura JSON requerida:
         : undefined,
       configTarjeta: typeof rec['configTarjeta'] === 'object' && rec['configTarjeta'] !== null
         ? (rec['configTarjeta'] as ParserResult['configTarjeta'])
+        : undefined,
+      configCuenta: typeof rec['configCuenta'] === 'object' && rec['configCuenta'] !== null
+        ? (rec['configCuenta'] as ParserResult['configCuenta'])
         : undefined,
       correccionCuotas: typeof rec['correccionCuotas'] === 'object' && rec['correccionCuotas'] !== null
         ? (rec['correccionCuotas'] as ParserResult['correccionCuotas'])

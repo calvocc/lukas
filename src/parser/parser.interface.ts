@@ -10,6 +10,7 @@ import { ParserResult, Tarjeta, Obligacion, Transaccion, RecomendacionCompraPend
 export interface ContextoMensaje {
   readonly fechaActual: string; // YYYY-MM-DD
   readonly tarjetasActivas: readonly { readonly id: string; readonly nombre: string; readonly banco: string }[];
+  readonly cuentasActivas?: readonly { readonly id: string; readonly nombre: string; readonly tipo: string; readonly banco?: string | null; readonly saldo: number }[];
   readonly obligacionesActivas: readonly { readonly id: string; readonly nombre: string }[];
   readonly ultimaTransaccion: Transaccion | null;
   readonly recomendacionPrevia?: RecomendacionCompraPendiente | null;

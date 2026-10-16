@@ -14,6 +14,7 @@ import { ParserModule } from '../parser/parser.module';
 import { RespuestasModule } from '../respuestas/respuestas.module';
 import { MovimientosModule } from '../movimientos/movimientos.module';
 import { TarjetasModule } from '../tarjetas/tarjetas.module';
+import { CuentasModule } from '../cuentas/cuentas.module';
 import { ObligacionesModule } from '../obligaciones/obligaciones.module';
 
 @Module({
@@ -23,6 +24,7 @@ import { ObligacionesModule } from '../obligaciones/obligaciones.module';
     RespuestasModule,
     MovimientosModule,
     TarjetasModule,
+    CuentasModule,
     ObligacionesModule,
   ],
   providers: [CliAdapter, BaileysAdapter, CanalRouterService, CanalService],

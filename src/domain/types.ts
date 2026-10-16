@@ -33,6 +33,7 @@ export type IntencionMensaje =
   | 'pago_tarjeta'
   | 'pago_obligacion'
   | 'config_tarjeta'
+  | 'config_cuenta'
   | 'config_obligacion'
   | 'config_presupuesto'
   | 'ayuda'
@@ -78,6 +79,22 @@ export interface Tarjeta {
   readonly creadoEn: Date;
 }
 
+export type TipoCuenta = 'debito' | 'ahorros' | 'corriente' | 'billetera' | 'efectivo';
+
+export interface Cuenta {
+  readonly id: string;
+  readonly usuarioId: string;
+  readonly nombre: string;
+  readonly tipo: TipoCuenta;
+  readonly banco: string | null;
+  readonly saldo: number;
+  readonly moneda: string;
+  readonly esDefault: boolean;
+  readonly activa: boolean;
+  readonly creadoEn: Date;
+  readonly actualizadaEn: Date;
+}
+
 export interface Categoria {
   readonly id: string;
   readonly nombre: string;
@@ -93,6 +110,7 @@ export interface Transaccion {
   readonly descripcion: string | null;
   readonly medioPago: MedioPago;
   readonly tarjetaId: string | null;
+  readonly cuentaId?: string | null;
   readonly cuotas: number;
   readonly cuotasOriginales: number;
   readonly pendienteRediferir: boolean;
@@ -171,6 +189,13 @@ export interface ConfigTarjetaExtraida {
   readonly diaPago: number | null;
 }
 
+export interface ConfigCuentaExtraida {
+  readonly nombre: string | null;
+  readonly tipo: TipoCuenta;
+  readonly banco: string | null;
+  readonly saldo: number | null;
+}
+
 export interface ParserResult {
   readonly intencion: IntencionMensaje;
   readonly tonoDetectado: TonoVoz;
@@ -186,6 +211,7 @@ export interface ParserResult {
     readonly limiteGastoMensual: number;
   };
   readonly configTarjeta?: ConfigTarjetaExtraida;
+  readonly configCuenta?: ConfigCuentaExtraida;
   readonly correccionCuotas?: {
     readonly tarjeta?: string;
     readonly nuevasCuotas: number;

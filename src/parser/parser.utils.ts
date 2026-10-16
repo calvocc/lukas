@@ -7,6 +7,8 @@
  * ========================================================
  */
 
+import { TipoCuenta } from '../domain/types';
+
 export interface DetallesTarjetaExtraidos {
   readonly nombre: string;
   readonly banco: string;
@@ -232,5 +234,91 @@ export function extraerDetallesTarjeta(texto: string): DetallesTarjetaExtraidos 
     tasaInteresEa,
     diaCorte,
     diaPago,
+  };
+}
+
+export interface DetallesCuentaExtraidos {
+  readonly nombre: string;
+  readonly tipo: TipoCuenta;
+  readonly banco: string | null;
+  readonly saldo: number | null;
+}
+
+/**
+ * Extrae tipo de cuenta (débito, ahorros, billetera, efectivo), banco y saldo inicial.
+ * Soporta modismos colombianos como "tengo 500 mil en nequi", "débito bancolombia", "efectivo", etc.
+ */
+export function extraerDetallesCuenta(texto: string): DetallesCuentaExtraidos {
+  const lower = texto.toLowerCase().trim();
+
+  // 1. Detección de Tipo
+  let tipo: TipoCuenta = 'debito';
+  let banco: string | null = null;
+  let nombre = 'Mi Cuenta';
+
+  if (lower.includes('efectivo') || lower.includes('plata en mano') || lower.includes('en físico') || lower.includes('en fisico')) {
+    tipo = 'efectivo';
+    nombre = 'Efectivo';
+  } else if (lower.includes('nequi')) {
+    tipo = 'billetera';
+    nombre = 'Nequi';
+    banco = 'Bancolombia';
+  } else if (lower.includes('daviplata')) {
+    tipo = 'billetera';
+    nombre = 'Daviplata';
+    banco = 'Davivienda';
+  } else if (lower.includes('dale')) {
+    tipo = 'billetera';
+    nombre = 'Dale!';
+    banco = 'Grupo Aval';
+  } else if (lower.includes('movii')) {
+    tipo = 'billetera';
+    nombre = 'Movii';
+  } else if (lower.includes('lulo')) {
+    tipo = 'ahorros';
+    nombre = 'Lulo Bank';
+    banco = 'Lulo Bank';
+  } else if (lower.includes('corriente')) {
+    tipo = 'corriente';
+  } else if (lower.includes('ahorro') || lower.includes('ahorros')) {
+    tipo = 'ahorros';
+  } else {
+    tipo = 'debito';
+  }
+
+  // 2. Detección de Banco si no fue asignado aún
+  if (!banco && tipo !== 'efectivo') {
+    if (lower.includes('davivienda')) banco = 'Davivienda';
+    else if (lower.includes('bancolombia')) banco = 'Bancolombia';
+    else if (/\bnu\b/i.test(lower) || /\bnubank\b/i.test(lower)) banco = 'Nubank';
+    else if (lower.includes('falabella')) banco = 'Falabella';
+    else if (lower.includes('bogota') || lower.includes('bogotá')) banco = 'Banco de Bogotá';
+    else if (lower.includes('bbva')) banco = 'BBVA';
+    else if (lower.includes('scotiabank') || lower.includes('colpatria')) banco = 'Scotiabank Colpatria';
+    else if (lower.includes('occidente')) banco = 'Banco de Occidente';
+    else if (lower.includes('popular')) banco = 'Banco Popular';
+    else if (lower.includes('itau') || lower.includes('itaú')) banco = 'Itaú';
+    else if (lower.includes('av villas') || lower.includes('villas')) banco = 'AV Villas';
+    else if (lower.includes('rappi')) banco = 'Rappi';
+  }
+
+  // 3. Ensamblaje del Nombre si no es billetera/efectivo
+  if (tipo !== 'efectivo' && tipo !== 'billetera') {
+    const prefijo = tipo === 'debito' ? 'Débito' : tipo === 'ahorros' ? 'Ahorros' : 'Corriente';
+    if (banco) {
+      nombre = `${prefijo} ${banco}`;
+    } else {
+      nombre = `${prefijo} Bancaria`;
+    }
+  }
+
+  // 4. Saldo Inicial
+  const saldo = extraerMontoColombiano(texto);
+
+  return {
+    nombre,
+    tipo,
+    banco,
+    saldo,
   };
 }

@@ -12,12 +12,13 @@ import { ParserService } from '../parser/parser.service';
 import { RespuestasService } from '../respuestas/respuestas.service';
 import { MovimientosService } from '../movimientos/movimientos.service';
 import { TarjetasService } from '../tarjetas/tarjetas.service';
+import { CuentasService } from '../cuentas/cuentas.service';
 import { ObligacionesService } from '../obligaciones/obligaciones.service';
 import { DatabaseService } from '../database/database.service';
 import { ContextoMensaje } from '../parser/parser.interface';
-import { Tarjeta, RecomendacionCompraPendiente } from '../domain/types';
+import { Tarjeta, RecomendacionCompraPendiente, Cuenta } from '../domain/types';
 import { formatearMoneda } from '../respuestas/formateador';
-import { extraerDetallesTarjeta, extraerMontoColombiano } from '../parser/parser.utils';
+import { extraerDetallesTarjeta, extraerDetallesCuenta, extraerMontoColombiano } from '../parser/parser.utils';
 
 export interface RegistroTarjetaPendiente {
   nombre: string | null;
@@ -48,6 +49,7 @@ export class CanalRouterService {
     private readonly respuestasService: RespuestasService,
     private readonly movimientosService: MovimientosService,
     private readonly tarjetasService: TarjetasService,
+    private readonly cuentasService: CuentasService,
     private readonly obligacionesService: ObligacionesService,
     private readonly db: DatabaseService,
   ) {}
@@ -125,6 +127,7 @@ export class CanalRouterService {
 
     // 3. Usuario activo: Preparar contexto para el Intérprete
     const tarjetas = await this.tarjetasService.listarPorUsuario(usuario.id);
+    const cuentas = await this.cuentasService.listarPorUsuario(usuario.id);
     const obligaciones = await this.obligacionesService.listarPorUsuario(usuario.id);
     const ultimaTransaccion = await this.movimientosService.obtenerUltimaTransaccion(usuario.id);
 
@@ -141,6 +144,7 @@ export class CanalRouterService {
     const contexto: ContextoMensaje = {
       fechaActual: new Date().toISOString().split('T')[0] ?? '',
       tarjetasActivas: tarjetas.map((t) => ({ id: t.id, nombre: t.nombre, banco: t.banco })),
+      cuentasActivas: cuentas.map((c) => ({ id: c.id, nombre: c.nombre, tipo: c.tipo, banco: c.banco, saldo: c.saldo })),
       obligacionesActivas: obligaciones.map((o) => ({ id: o.id, nombre: o.nombre })),
       ultimaTransaccion,
       recomendacionPrevia,
@@ -295,6 +299,18 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
         return this.pedirSiguienteDatoTarjeta(sesion);
       }
 
+      case 'config_cuenta': {
+        const detalles = parsed.configCuenta ?? extraerDetallesCuenta(texto);
+        const saldo = detalles.saldo ?? extraerMontoColombiano(texto) ?? 0;
+        const cuentaGuardada = await this.cuentasService.crear(usuario.id, {
+          nombre: detalles.nombre ?? (detalles.banco ? `Débito ${detalles.banco}` : 'Mi Cuenta'),
+          tipo: detalles.tipo,
+          banco: detalles.banco,
+          saldo,
+        });
+        return this.respuestasService.mensajeCuentaGuardada(cuentaGuardada);
+      }
+
       case 'consulta': {
         let tipoConsulta = parsed.consulta?.tipoConsulta ?? 'resumen';
         const lowerLimpio = texto.toLowerCase().replace(/[/\\?¿!¡.,;:]/g, ' ');
@@ -377,8 +393,31 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
           case 'tarjetas':
             return this.respuestasService.mensajeListadoTarjetas(tarjetasActualizadas);
 
-          case 'saldo':
-            return this.respuestasService.mensajeConsultaSaldo(tarjetaObjetivo, tarjetasActualizadas);
+          case 'saldo': {
+            const cuentasActualizadas = await this.cuentasService.listarPorUsuario(usuario.id);
+            let cuentaObjetivo: Cuenta | null = null;
+            if (nombreTarjetaBuscada) {
+              cuentaObjetivo = await this.cuentasService.buscarPorNombreOAlias(usuario.id, nombreTarjetaBuscada);
+            }
+            if (!cuentaObjetivo && !tarjetaObjetivo && cuentasActualizadas.length > 0) {
+              for (const c of cuentasActualizadas) {
+                if (
+                  lowerLimpio.includes(c.nombre.toLowerCase()) ||
+                  (c.banco && lowerLimpio.includes(c.banco.toLowerCase())) ||
+                  lowerLimpio.includes(c.tipo)
+                ) {
+                  cuentaObjetivo = c;
+                  break;
+                }
+              }
+            }
+            return this.respuestasService.mensajeConsultaSaldo(
+              tarjetaObjetivo,
+              tarjetasActualizadas,
+              cuentaObjetivo,
+              cuentasActualizadas,
+            );
+          }
 
           case 'ciclo_tarjeta':
             return this.respuestasService.mensajeConsultaCiclo(tarjetaObjetivo, tarjetasActualizadas);
@@ -461,11 +500,23 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
           }
 
           let tarjetaAsignada = null;
-          if (t.tarjeta) {
-            tarjetaAsignada = await this.tarjetasService.buscarPorNombreOAlias(usuario.id, t.tarjeta);
-          } else if (t.medioPago === 'tarjeta' && tarjetas.length > 0) {
-            // Tarjeta default o primera
-            tarjetaAsignada = tarjetas.find((x) => x.esDefault) ?? tarjetas[0];
+          let cuentaAsignada: Cuenta | null = null;
+
+          if (t.medioPago === 'tarjeta' || (!t.medioPago && t.tarjeta)) {
+            if (t.tarjeta) {
+              tarjetaAsignada = await this.tarjetasService.buscarPorNombreOAlias(usuario.id, t.tarjeta);
+            } else if (tarjetas.length > 0) {
+              // Tarjeta default o primera
+              tarjetaAsignada = tarjetas.find((x) => x.esDefault) ?? tarjetas[0];
+            }
+          } else if (t.medioPago === 'debito' || t.medioPago === 'efectivo' || t.medioPago === 'transferencia') {
+            const nombreBusqueda = t.tarjeta ?? t.descripcion ?? '';
+            if (nombreBusqueda) {
+              cuentaAsignada = await this.cuentasService.buscarPorNombreOAlias(usuario.id, nombreBusqueda);
+            }
+            if (!cuentaAsignada && cuentas.length > 0) {
+              cuentaAsignada = cuentas.find((c) => c.tipo === t.medioPago) ?? cuentas[0] ?? null;
+            }
           }
 
           const guardada = await this.movimientosService.registrar(usuario.id, {
@@ -474,10 +525,16 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
             categoriaNombre: t.categoria,
             categoriaConfianza: t.categoriaConfianza,
             descripcion: t.descripcion,
-            medioPago: t.medioPago ?? 'tarjeta',
+            medioPago: t.medioPago ?? (tarjetaAsignada ? 'tarjeta' : cuentaAsignada ? 'debito' : 'efectivo'),
             tarjetaId: tarjetaAsignada?.id ?? null,
             cuotas: t.cuotas ?? 1,
           });
+
+          // Si usamos cuenta de liquidez (débito/efectivo), actualizar su saldo
+          if (cuentaAsignada) {
+            const delta = t.tipo === 'gasto' ? -monto : monto;
+            cuentaAsignada = await this.cuentasService.actualizarSaldo(cuentaAsignada.id, delta);
+          }
 
           // Obtener gasto mensual y evaluar límites
           const gastoAcumuladoMes = await this.movimientosService.calcularGastoMesActual(usuario.id);
@@ -491,6 +548,7 @@ _"¿Qué tarjeta uso hoy para 500 mil?"_ y te diré si es el mejor momento para 
             this.respuestasService.mensajeRegistroExitoso(
               guardada,
               tarjetaActualizada,
+              cuentaAsignada,
               gastoAcumuladoMes,
               usuario.limiteGastoMensual,
             ),

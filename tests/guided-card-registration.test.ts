@@ -13,6 +13,7 @@ import { ParserService } from '../src/parser/parser.service';
 import { RespuestasService } from '../src/respuestas/respuestas.service';
 import { MovimientosService } from '../src/movimientos/movimientos.service';
 import { TarjetasService } from '../src/tarjetas/tarjetas.service';
+import { CuentasService } from '../src/cuentas/cuentas.service';
 import { ObligacionesService } from '../src/obligaciones/obligaciones.service';
 import { DatabaseService } from '../src/database/database.service';
 import { Usuario, Tarjeta } from '../src/domain/types';
@@ -24,6 +25,7 @@ describe('Flujo Conversacional Guiado: Registro de Tarjetas', () => {
   let respuestasService: RespuestasService;
   let movimientosServiceMock: Partial<MovimientosService>;
   let tarjetasServiceMock: Partial<TarjetasService>;
+  let cuentasServiceMock: Partial<CuentasService>;
   let obligacionesServiceMock: Partial<ObligacionesService>;
   let dbMock: Partial<DatabaseService>;
 
@@ -149,6 +151,14 @@ describe('Flujo Conversacional Guiado: Registro de Tarjetas', () => {
       }),
     };
 
+    cuentasServiceMock = {
+      listarPorUsuario: vi.fn().mockResolvedValue([]),
+      buscarPorNombreOAlias: vi.fn().mockResolvedValue(null),
+      buscarPorId: vi.fn().mockResolvedValue(null),
+      actualizarSaldo: vi.fn().mockResolvedValue(undefined),
+      calcularSaldoTotalLiquido: vi.fn().mockResolvedValue(0),
+    };
+
     obligacionesServiceMock = {
       listarPorUsuario: vi.fn().mockResolvedValue([]),
     };
@@ -163,6 +173,7 @@ describe('Flujo Conversacional Guiado: Registro de Tarjetas', () => {
       respuestasService,
       movimientosServiceMock as MovimientosService,
       tarjetasServiceMock as TarjetasService,
+      cuentasServiceMock as CuentasService,
       obligacionesServiceMock as ObligacionesService,
       dbMock as DatabaseService,
     );
